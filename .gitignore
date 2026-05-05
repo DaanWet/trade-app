@@ -1,6 +1,8 @@
 node_modules
 dist
 build
+release
+electron/dist
 
 # env
 .env

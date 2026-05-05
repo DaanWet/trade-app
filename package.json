@@ -1,0 +1,101 @@
+{
+  "name": "trade-app-desktop",
+  "version": "0.1.0",
+  "description": "Trade App desktop wrapper (Electron)",
+  "main": "electron/dist/main.js",
+  "scripts": {
+    "build:frontend": "npm --prefix frontend run build -- --configuration=production",
+    "build:backend": "npm --prefix backend run build",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build": "npm run build:frontend && npm run build:backend && npm run build:electron",
+    "rebuild-native": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "electron-builder install-app-deps",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "electron-updater": "^6.8.3",
+    "express": "^5.0.1",
+    "yahoo-finance2": "^3.14.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "electron": "^41.5.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.3"
+  },
+  "build": {
+    "appId": "com.tradeapp.desktop",
+    "productName": "Trade App",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/dist/**/*",
+      "backend/dist/**/*",
+      "frontend/dist/frontend/browser/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "DaanWet",
+        "repo": "trade-app"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.finance"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Office"
+    }
+  }
+}

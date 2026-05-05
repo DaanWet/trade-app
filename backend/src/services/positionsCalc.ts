@@ -194,6 +194,31 @@ async function metricsFromState(
   const realized = state.realized.reduce((s, r) => s + r.realized_pnl, 0);
   const totalPnl = unrealized != null ? unrealized + realized : null;
 
+  // Display-currency conversions are date-aware:
+  //  - cost_basis_display: each open lot converted with its BUY date
+  //  - realized_pnl_display: each realized lot converted with its SELL date
+  //  - market_value_display: today's rate (it IS today's market value)
+  //  - unrealized / total: derived from the above for internal consistency
+  const costBasisDisplay = await sumConverted(
+    state.open_lots.map(l => ({
+      amount: l.shares_remaining * l.cost_per_share,
+      currency: state.currency,
+      date: l.trade_date,
+    })),
+    displayCurrency,
+  );
+  const realizedDisplay = await sumConverted(
+    state.realized.map(r => ({
+      amount: r.realized_pnl,
+      currency: r.currency,
+      date: r.sell_date,
+    })),
+    displayCurrency,
+  );
+  const marketValueDisplay = marketValue != null ? await convert(marketValue, state.currency, displayCurrency) : null;
+  const unrealizedDisplay = marketValueDisplay != null ? marketValueDisplay - costBasisDisplay : null;
+  const totalPnlDisplay = unrealizedDisplay != null ? unrealizedDisplay + realizedDisplay : null;
+
   return {
     ticker: state.ticker,
     name: quote?.name ?? null,
@@ -212,12 +237,24 @@ async function metricsFromState(
     is_open: sharesOpen > 1e-9,
 
     display_currency: displayCurrency,
-    cost_basis_display: await convert(costBasis, state.currency, displayCurrency),
-    market_value_display: marketValue != null ? await convert(marketValue, state.currency, displayCurrency) : null,
-    unrealized_pnl_display: unrealized != null ? await convert(unrealized, state.currency, displayCurrency) : null,
-    realized_pnl_display: await convert(realized, state.currency, displayCurrency),
-    total_pnl_display: totalPnl != null ? await convert(totalPnl, state.currency, displayCurrency) : null,
+    cost_basis_display: costBasisDisplay,
+    market_value_display: marketValueDisplay,
+    unrealized_pnl_display: unrealizedDisplay,
+    realized_pnl_display: realizedDisplay,
+    total_pnl_display: totalPnlDisplay,
   };
+}
+
+/** Helper: convert each entry with its own date and sum the result. */
+async function sumConverted(
+  entries: Array<{ amount: number; currency: string; date: string }>,
+  displayCurrency: string,
+): Promise<number> {
+  let total = 0;
+  for (const e of entries) {
+    total += await convert(e.amount, e.currency, displayCurrency, e.date);
+  }
+  return total;
 }
 
 export interface PortfolioTotals {
