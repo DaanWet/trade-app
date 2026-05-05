@@ -55,7 +55,8 @@
       {
         "provider": "github",
         "owner": "DaanWet",
-        "repo": "trade-app"
+        "repo": "trade-app",
+        "releaseType": "prerelease"
       }
     ],
     "win": {
