@@ -1,0 +1,52 @@
+/**
+ * Formatting helpers shared between components.
+ * Locale: nl-BE for the Belgian user (decimal comma, EUR symbol).
+ */
+
+const LOCALE = 'nl-BE';
+
+export function formatMoney(value: number | null | undefined, currency: string, fractionDigits = 2): string {
+  if (value == null || isNaN(value)) return '—';
+  return new Intl.NumberFormat(LOCALE, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
+}
+
+export function formatNumber(value: number | null | undefined, fractionDigits = 2): string {
+  if (value == null || isNaN(value)) return '—';
+  return new Intl.NumberFormat(LOCALE, {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
+}
+
+export function formatPercent(value: number | null | undefined, fractionDigits = 2): string {
+  if (value == null || isNaN(value)) return '—';
+  return new Intl.NumberFormat(LOCALE, {
+    style: 'percent',
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value / 100);
+}
+
+export function formatShares(value: number | null | undefined): string {
+  if (value == null) return '—';
+  // Up to 6 decimals, trim trailing zeros
+  const fixed = value.toFixed(6).replace(/\.?0+$/, '');
+  return new Intl.NumberFormat(LOCALE).format(parseFloat(fixed));
+}
+
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
+}
+
+export function pnlClass(value: number | null | undefined): string {
+  if (value == null || value === 0) return '';
+  return value > 0 ? 'text-success' : 'text-danger';
+}

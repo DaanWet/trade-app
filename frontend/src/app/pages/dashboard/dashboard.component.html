@@ -1,0 +1,79 @@
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Dashboard</h2>
+  <button class="btn btn-outline-secondary btn-sm" (click)="refresh(); loadHistory()" [disabled]="loading()">
+    <i class="bi bi-arrow-clockwise me-1"></i>Vernieuwen
+  </button>
+</div>
+
+@if (error()) {
+  <div class="alert alert-danger">{{ error() }}</div>
+}
+
+@if (data(); as d) {
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card p-3">
+        <div class="text-muted small">Marktwaarde</div>
+        <div class="fs-3 fw-bold">{{ d.totals.market_value | money: d.totals.display_currency:0 }}</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card p-3">
+        <div class="text-muted small">Geïnvesteerd</div>
+        <div class="fs-3 fw-bold">{{ d.totals.cost_basis | money: d.totals.display_currency:0 }}</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card p-3">
+        <div class="text-muted small">Unrealized</div>
+        <div class="fs-3 fw-bold" [class]="pnlClass(d.totals.unrealized_pnl)">
+          {{ d.totals.unrealized_pnl | money: d.totals.display_currency:0 }}
+        </div>
+        <div class="small" [class]="pnlClass(d.totals.unrealized_pct)">
+          {{ d.totals.unrealized_pct | pct }}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card p-3">
+        <div class="text-muted small">Realized</div>
+        <div class="fs-3 fw-bold" [class]="pnlClass(d.totals.realized_pnl)">
+          {{ d.totals.realized_pnl | money: d.totals.display_currency:0 }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-3 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0">Portfolio waarde</h5>
+      @if (chartVisible()) {
+        <button class="btn btn-sm btn-outline-secondary" (click)="loadHistory()" [disabled]="loadingHistory()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Vernieuwen
+        </button>
+      }
+    </div>
+    @if (!chartVisible()) {
+      <div class="text-center py-4">
+        <p class="text-muted small mb-3">
+          De grafiek is verborgen om Yahoo API-belasting te beperken.<br>
+          Klik om de historische data op te halen (1 call per ticker + currency-pair).
+        </p>
+        <button class="btn btn-outline-primary btn-sm" (click)="showChart()">
+          <i class="bi bi-graph-up me-1"></i>Toon historische grafiek
+        </button>
+      </div>
+    } @else if (loadingHistory()) {
+      <div class="text-muted small">Geschiedenis laden…</div>
+    } @else if (history().length === 0) {
+      <div class="text-muted small">Geen geschiedenis beschikbaar.</div>
+    } @else {
+      <app-portfolio-chart [data]="history()" [currency]="d.totals.display_currency" />
+    }
+  </div>
+
+  <h5>Posities</h5>
+  <app-positions-table [positions]="d.positions" />
+} @else if (loading()) {
+  <div class="text-center py-5"><span class="spinner-border"></span></div>
+}

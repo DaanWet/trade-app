@@ -1,0 +1,72 @@
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Trades</h2>
+  @if (!showForm()) {
+    <button class="btn btn-primary" (click)="newTrade()">
+      <i class="bi bi-plus-lg me-1"></i>Nieuwe trade
+    </button>
+  }
+</div>
+
+@if (showForm()) {
+  <div class="mb-4">
+    <app-trade-form
+      [initial]="editing()"
+      (saved)="onSaved()"
+      (cancelled)="onCancel()"
+    />
+  </div>
+}
+
+@if (error()) {
+  <div class="alert alert-danger">{{ error() }}</div>
+}
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Datum</th>
+          <th>Ticker</th>
+          <th>Type</th>
+          <th class="num">Aandelen</th>
+          <th class="num">Prijs</th>
+          <th class="num">Kosten</th>
+          <th class="num">Totaal</th>
+          <th>Notities</th>
+          <th class="num"></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (t of trades(); track t.id) {
+          <tr>
+            <td>{{ t.trade_date | d }}</td>
+            <td class="fw-bold">{{ t.ticker }}</td>
+            <td>
+              <span class="badge" [class.bg-success]="t.side === 'BUY'" [class.bg-danger]="t.side === 'SELL'">
+                {{ t.side }}
+              </span>
+            </td>
+            <td class="num">{{ t.shares | shares }}</td>
+            <td class="num">{{ t.price | money: t.currency }}</td>
+            <td class="num">{{ t.fees | money: t.currency }}</td>
+            <td class="num">{{ (t.shares * t.price + t.fees) | money: t.currency }}</td>
+            <td class="text-muted small">{{ t.notes }}</td>
+            <td class="num">
+              <button class="btn btn-sm btn-outline-secondary me-1" (click)="edit(t)" title="Aanpassen">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" (click)="remove(t)" title="Verwijderen">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="9" class="text-center text-muted py-4">Nog geen trades. Voeg je eerste toe.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

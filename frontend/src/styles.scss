@@ -1,0 +1,79 @@
+/* Global styles - dark-mode-friendly tweaks on top of Bootstrap */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #0e1117;
+  color: #e6edf3;
+}
+
+.card {
+  background-color: #161b22;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+
+.table {
+  --bs-table-bg: transparent;
+  --bs-table-color: #e6edf3;
+  --bs-table-border-color: #30363d;
+  --bs-table-striped-bg: rgba(255, 255, 255, 0.03);
+  --bs-table-striped-color: #e6edf3;
+  --bs-table-hover-bg: rgba(255, 255, 255, 0.06);
+  --bs-table-hover-color: #e6edf3;
+}
+
+.form-control,
+.form-select {
+  background-color: #0e1117;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+.form-control:focus,
+.form-select:focus {
+  background-color: #0e1117;
+  color: #e6edf3;
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 0.2rem rgba(88, 166, 255, 0.25);
+}
+.form-control::placeholder {
+  color: #6e7681;
+}
+
+.btn-outline-secondary {
+  --bs-btn-color: #e6edf3;
+  --bs-btn-border-color: #30363d;
+  --bs-btn-hover-bg: #21262d;
+  --bs-btn-hover-border-color: #6e7681;
+  --bs-btn-hover-color: #e6edf3;
+}
+
+.text-success {
+  color: #3fb950 !important;
+}
+.text-danger {
+  color: #f85149 !important;
+}
+.text-muted {
+  color: #8b949e !important;
+}
+
+/* Numeric columns */
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dropdown-menu {
+  background-color: #161b22;
+  border-color: #30363d;
+}
+.dropdown-item {
+  color: #e6edf3;
+}
+.dropdown-item:hover {
+  background-color: #21262d;
+  color: #e6edf3;
+}

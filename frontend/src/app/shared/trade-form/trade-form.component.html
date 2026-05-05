@@ -1,0 +1,111 @@
+<form (ngSubmit)="submit()" class="card p-3">
+  <h5 class="mb-3">{{ initial() ? 'Trade aanpassen' : 'Nieuwe trade' }}</h5>
+
+  <div class="row g-3">
+    <div class="col-md-3 position-relative">
+      <label class="form-label small">Ticker</label>
+      <input
+        type="text"
+        class="form-control"
+        placeholder="bv. AAPL"
+        [value]="form().ticker"
+        (input)="onTickerInput($any($event.target).value)"
+        (focus)="showResults.set(true)"
+        (blur)="hideResultsSoon()"
+        autocomplete="off"
+      />
+      @if (showResults() && searchResults().length > 0) {
+        <ul class="dropdown-menu show w-100 mt-1" style="max-height: 240px; overflow-y: auto;">
+          @for (r of searchResults(); track r.symbol) {
+            <li>
+              <button type="button" class="dropdown-item" (mousedown)="pickResult(r)">
+                <span class="fw-bold">{{ r.symbol }}</span>
+                <span class="text-muted small ms-2">{{ r.name }}</span>
+                <span class="text-muted small ms-2">{{ r.exchange }}</span>
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+
+    <div class="col-md-2">
+      <label class="form-label small">Datum</label>
+      <input type="date" class="form-control" [value]="form().trade_date"
+             (change)="patch('trade_date', $any($event.target).value)" />
+    </div>
+
+    <div class="col-md-1">
+      <label class="form-label small">Type</label>
+      <select class="form-select" [value]="form().side"
+              (change)="patch('side', $any($event.target).value)">
+        @for (s of sides; track s) {
+          <option [value]="s">{{ s }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="col-md-2">
+      <label class="form-label small">Aandelen</label>
+      <input type="number" step="any" min="0" class="form-control"
+             [value]="form().shares"
+             (input)="patch('shares', $any($event.target).valueAsNumber || 0)" />
+    </div>
+
+    <div class="col-md-2">
+      <label class="form-label small d-flex justify-content-between align-items-center">
+        <span>Prijs/aandeel</span>
+        @if (fetchingPrice()) {
+          <span class="spinner-border spinner-border-sm text-muted"></span>
+        }
+      </label>
+      <input type="number" step="any" min="0" class="form-control"
+             [value]="form().price"
+             (input)="onPriceInput($any($event.target).valueAsNumber || 0)" />
+      @if (suggestedPrice(); as s) {
+        <div class="form-text text-muted small d-flex gap-2 align-items-center">
+          <span>Voorstel: {{ s.price | num:4 }} {{ s.currency }} ({{ s.date | d }})</span>
+          @if (form().price !== s.price) {
+            <button type="button" class="btn btn-link btn-sm p-0" (click)="useSuggestedPrice()">gebruiken</button>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="col-md-1">
+      <label class="form-label small">Currency</label>
+      <select class="form-select" [value]="form().currency"
+              (change)="patch('currency', $any($event.target).value)">
+        @for (c of currencies; track c) {
+          <option [value]="c">{{ c }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="col-md-1">
+      <label class="form-label small">Kosten</label>
+      <input type="number" step="any" min="0" class="form-control"
+             [value]="form().fees"
+             (input)="patch('fees', $any($event.target).valueAsNumber || 0)" />
+    </div>
+
+    <div class="col-12">
+      <label class="form-label small">Notities</label>
+      <input type="text" class="form-control"
+             [value]="form().notes ?? ''"
+             (input)="patch('notes', $any($event.target).value)" />
+    </div>
+  </div>
+
+  @if (error()) {
+    <div class="alert alert-danger mt-3 mb-0 py-2">{{ error() }}</div>
+  }
+
+  <div class="d-flex gap-2 mt-3">
+    <button type="submit" class="btn btn-primary" [disabled]="saving()">
+      @if (saving()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+      {{ initial() ? 'Bijwerken' : 'Toevoegen' }}
+    </button>
+    <button type="button" class="btn btn-outline-secondary" (click)="cancelled.emit()">Annuleren</button>
+  </div>
+</form>

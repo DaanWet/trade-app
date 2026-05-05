@@ -1,0 +1,26 @@
+<h2 class="mb-3">Instellingen</h2>
+
+<div class="card p-4" style="max-width: 480px;">
+  <div class="mb-3">
+    <label class="form-label">Weergavemunt</label>
+    <select class="form-select"
+            [value]="displayCurrency()"
+            (change)="displayCurrency.set($any($event.target).value)">
+      @for (c of currencies; track c) {
+        <option [value]="c">{{ c }}</option>
+      }
+    </select>
+    <div class="form-text text-muted">
+      Alle bedragen in dashboard en tax-overzicht worden naar deze munt geconverteerd via dagkoersen.
+    </div>
+  </div>
+
+  <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
+    @if (saving()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+    Opslaan
+  </button>
+
+  @if (message()) {
+    <div class="mt-3 small text-muted">{{ message() }}</div>
+  }
+</div>

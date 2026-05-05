@@ -1,0 +1,38 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" routerLink="/">
+      <i class="bi bi-graph-up-arrow me-2"></i>Trade App
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="mainNav">
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
+            <i class="bi bi-speedometer2 me-1"></i>Dashboard
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/trades" routerLinkActive="active">
+            <i class="bi bi-arrow-left-right me-1"></i>Trades
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/tax" routerLinkActive="active">
+            <i class="bi bi-receipt me-1"></i>Belasting
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/settings" routerLinkActive="active">
+            <i class="bi bi-gear me-1"></i>Instellingen
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main class="container-fluid py-4">
+  <router-outlet />
+</main>

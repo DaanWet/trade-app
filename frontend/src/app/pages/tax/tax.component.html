@@ -1,0 +1,70 @@
+<h2 class="mb-3">Meerwaardebelasting (BE)</h2>
+
+@if (error()) {
+  <div class="alert alert-danger">{{ error() }}</div>
+}
+
+@if (report(); as r) {
+  <div class="card p-3 mb-4">
+    <div class="row">
+      <div class="col-md-4">
+        <div class="text-muted small">Tarief</div>
+        <div class="fs-5">{{ (r.params.rate * 100).toFixed(0) }}%</div>
+      </div>
+      <div class="col-md-4">
+        <div class="text-muted small">Vrijstelling per jaar</div>
+        <div class="fs-5">{{ r.params.exemption | money: r.params.currency:0 }}</div>
+      </div>
+      <div class="col-md-4">
+        <div class="text-muted small">Van toepassing vanaf</div>
+        <div class="fs-5">{{ r.params.appliesFrom }}</div>
+      </div>
+    </div>
+    <div class="text-muted small mt-2">
+      Verliezen verminderen winsten <strong>niet</strong>. Berekening op basis van gerealiseerde meerwaarden (FIFO) per kalenderjaar, omgezet naar weergavemunt op verkoopdatum.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Jaar</th>
+            <th class="num"># Lots</th>
+            <th class="num">Winsten</th>
+            <th class="num">Verliezen</th>
+            <th class="num">Vrijstelling</th>
+            <th class="num">Belastbaar</th>
+            <th class="num">Te betalen</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (y of r.years; track y.year) {
+            <tr>
+              <td class="fw-bold">{{ y.year }}</td>
+              <td class="num">{{ y.num_realized_lots }}</td>
+              <td class="num text-success">{{ y.gains | money: y.currency }}</td>
+              <td class="num text-danger">{{ y.losses | money: y.currency }}</td>
+              <td class="num">{{ y.exemption | money: y.currency }}</td>
+              <td class="num">{{ y.taxable_amount | money: y.currency }}</td>
+              <td class="num fw-bold">{{ y.tax_due | money: y.currency }}</td>
+              <td>
+                @if (y.applies) {
+                  <span class="badge bg-warning text-dark">Belastbaar</span>
+                } @else {
+                  <span class="badge bg-secondary">Vrij ({{ y.year }})</span>
+                }
+              </td>
+            </tr>
+          } @empty {
+            <tr><td colspan="8" class="text-center text-muted py-4">Nog geen gerealiseerde meerwaarden.</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+} @else if (loading()) {
+  <div class="text-center py-5"><span class="spinner-border"></span></div>
+}
