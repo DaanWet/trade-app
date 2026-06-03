@@ -5,6 +5,9 @@ import { getSetting } from '../helpers/settings';
 import { SETTING_KEYS } from '../helpers/constants';
 import type { TickerRow } from '../queries/prices';
 
+/** A position counts as open above this many shares (ignores floating-point dust). */
+const OPEN_SHARES_EPSILON = 1e-9;
+
 /**
  * One open BUY lot waiting to be matched against a SELL.
  * Used internally by the FIFO walk.
@@ -192,7 +195,12 @@ async function metricsFromState(
   const unrealized = marketValue != null ? marketValue - costBasis : null;
   const unrealizedPct = unrealized != null && costBasis > 0 ? (unrealized / costBasis) * 100 : null;
   const realized = state.realized.reduce((s, r) => s + r.realized_pnl, 0);
-  const totalPnl = unrealized != null ? unrealized + realized : null;
+  const isOpen = sharesOpen > OPEN_SHARES_EPSILON;
+  // A closed position (no open shares) has no unrealized component, so its total P&L
+  // is simply its realized P&L. An open position with no available quote leaves the
+  // unrealized — and therefore the total — genuinely unknown (null), never silently 0.
+  const totalPnl =
+    unrealized != null ? unrealized + realized : isOpen ? null : realized;
 
   // Display-currency conversions are date-aware:
   //  - cost_basis_display: each open lot converted with its BUY date
@@ -217,7 +225,12 @@ async function metricsFromState(
   );
   const marketValueDisplay = marketValue != null ? await convert(marketValue, state.currency, displayCurrency) : null;
   const unrealizedDisplay = marketValueDisplay != null ? marketValueDisplay - costBasisDisplay : null;
-  const totalPnlDisplay = unrealizedDisplay != null ? unrealizedDisplay + realizedDisplay : null;
+  const totalPnlDisplay =
+    unrealizedDisplay != null
+      ? unrealizedDisplay + realizedDisplay
+      : isOpen
+        ? null
+        : realizedDisplay;
 
   return {
     ticker: state.ticker,
@@ -234,7 +247,7 @@ async function metricsFromState(
     total_pnl: totalPnl,
     total_buys: state.total_buys,
     total_sells: state.total_sells,
-    is_open: sharesOpen > 1e-9,
+    is_open: isOpen,
 
     display_currency: displayCurrency,
     cost_basis_display: costBasisDisplay,
@@ -281,6 +294,9 @@ export type PortfolioTotals = StockTotals & CashAllocation;
 export function totalsOf(positions: PositionMetrics[]): StockTotals {
   let costBasis = 0, marketValue = 0, unrealized = 0, realized = 0;
   let displayCurrency = 'EUR';
+  // A closed position contributes only its realized P&L (its market/unrealized are null →
+  // coalesced to 0 here). An unpriced open position's unknown unrealized likewise coalesces
+  // to 0, so the aggregate total_pnl below is realized + whatever unrealized we could price.
   for (const p of positions) {
     displayCurrency = p.display_currency;
     costBasis += p.cost_basis_display;
