@@ -68,6 +68,36 @@ describe("cash routes", () => {
     expect((await request(app).delete("/api/cash/9999")).status).toBe(404);
   });
 
+  it("warns with 409 CASH_OVERDRAW when a BUY exceeds available cash, and proceeds on confirm", async () => {
+    await request(app)
+      .post("/api/cash")
+      .send({ type: "DEPOSIT", amount: 100, currency: "EUR", tx_date: "2026-01-02" });
+
+    // BUY costing 500 EUR against a 100 EUR balance → overdraw.
+    const blocked = await request(app)
+      .post("/api/trades")
+      .send({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR" });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe("CASH_OVERDRAW");
+
+    // Same trade with confirm: true goes through.
+    const confirmed = await request(app)
+      .post("/api/trades")
+      .send({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR", confirm: true });
+    expect(confirmed.status).toBe(201);
+  });
+
+  it("does not warn on a SELL (it raises cash), even with a negative balance", async () => {
+    // Buy 10 @ 50 with no deposits → cash already negative.
+    await request(app)
+      .post("/api/trades")
+      .send({ ticker: "BBB", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR", confirm: true });
+    const sell = await request(app)
+      .post("/api/trades")
+      .send({ ticker: "BBB", trade_date: "2026-02-05", side: "SELL", shares: 5, price: 60, currency: "EUR" });
+    expect(sell.status).toBe(201);
+  });
+
   it("folds cash into /api/positions totals (cash_pct + invested_pct = 100)", async () => {
     // No live quotes in test → market_value is 0, so net worth is just the cash.
     await request(app)

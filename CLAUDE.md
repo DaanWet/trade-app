@@ -124,7 +124,7 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `net_deposits` = Σ DEPOSIT − Σ WITHDRAWAL, each `convert()`ed at its `tx_date`.
 - `net_invested` mirrors portfolioHistory's cash-flow formula: BUY reduces cash by `shares*price+fees`, SELL increases it by `shares*price−fees` (each converted at `trade_date`).
 - A BUY automatically lowers cash, a SELL raises it — no separate per-trade cash record.
-- **Negative balance is allowed** (warned in UI, never blocked).
+- **Negative balance is allowed** but a trade that *lowers* cash into the negative triggers a soft confirm: `POST/PUT /api/trades` returns `409 { code: 'CASH_OVERDRAW' }` unless the body carries `confirm: true`. The trade-form catches the 409, asks the user, and retries with `confirm`. SELLs (which raise cash) never trip it. See `projectCashAfterTrade()` in cashService.ts.
 - The positions route folds the summary into `PortfolioTotals` (`cash_balance`, `net_worth`, `cash_pct`, `invested_pct`) so the dashboard stays one API call.
 
 ### Stock price caching (marketData.ts + daily_prices)

@@ -26,11 +26,11 @@ export class ApiService {
     const url = ticker ? `${this.base}/trades?ticker=${encodeURIComponent(ticker)}` : `${this.base}/trades`;
     return this.http.get<Trade[]>(url);
   }
-  createTrade(input: TradeInput): Observable<Trade> {
-    return this.http.post<Trade>(`${this.base}/trades`, input);
+  createTrade(input: TradeInput, confirm = false): Observable<Trade> {
+    return this.http.post<Trade>(`${this.base}/trades`, confirm ? { ...input, confirm } : input);
   }
-  updateTrade(id: number, input: TradeInput): Observable<Trade> {
-    return this.http.put<Trade>(`${this.base}/trades/${id}`, input);
+  updateTrade(id: number, input: TradeInput, confirm = false): Observable<Trade> {
+    return this.http.put<Trade>(`${this.base}/trades/${id}`, confirm ? { ...input, confirm } : input);
   }
   deleteTrade(id: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/trades/${id}`);

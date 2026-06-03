@@ -185,11 +185,18 @@ export class TradeFormComponent implements OnInit {
       this.error.set('Vul ticker, aantal aandelen en prijs in.');
       return;
     }
+    this.save(false);
+  }
+
+  /** Persist the trade. On a CASH_OVERDRAW (409) the user is asked to confirm,
+   *  then we retry once with `confirm` so the backend skips the check. */
+  private save(confirm: boolean): void {
     this.saving.set(true);
+    const f = this.form();
     const init = this.initial();
     const obs = init
-      ? this.api.updateTrade(init.id, f)
-      : this.api.createTrade(f);
+      ? this.api.updateTrade(init.id, f, confirm)
+      : this.api.createTrade(f, confirm);
     obs.subscribe({
       next: trade => {
         this.saving.set(false);
@@ -197,6 +204,10 @@ export class TradeFormComponent implements OnInit {
       },
       error: err => {
         this.saving.set(false);
+        if (!confirm && err?.status === 409 && err?.error?.code === 'CASH_OVERDRAW') {
+          if (window.confirm(`${err.error.error}\n\nToch doorgaan?`)) this.save(true);
+          return;
+        }
         this.error.set(err?.error?.error ?? 'Opslaan mislukt');
       },
     });
