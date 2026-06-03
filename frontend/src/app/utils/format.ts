@@ -46,6 +46,17 @@ export function formatDate(iso: string | null | undefined): string {
   return new Intl.DateTimeFormat(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
 }
 
+/** Parse een door de gebruiker getypt decimaal getal; accepteert zowel ',' als
+ *  '.' als decimaalteken. Geeft 0 terug bij leeg/ongeldig zodat het formulier
+ *  numeriek blijft. */
+export function parseDecimalInput(raw: string | null | undefined): number {
+  if (raw == null) return 0;
+  const normalized = raw.trim().replace(',', '.');
+  if (normalized === '') return 0;
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export function pnlClass(value: number | null | undefined): string {
   if (value == null || value === 0) return '';
   return value > 0 ? 'text-success' : 'text-danger';

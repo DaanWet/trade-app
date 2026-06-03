@@ -5,6 +5,7 @@ import { ApiService } from '../../services/api.service';
 import type { Trade, TradeInput, TradeSide, TickerSearchResult } from '../../models';
 import { Subject, catchError, debounceTime, distinctUntilChanged, of, switchMap } from 'rxjs';
 import { NumberPipe, DatePipe } from '../number-format/format.pipes';
+import { DecimalInputComponent } from '../decimal-input/decimal-input.component';
 
 const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'];
 
@@ -24,7 +25,7 @@ function isValidIsoDate(s: string): boolean {
 @Component({
   selector: 'app-trade-form',
   standalone: true,
-  imports: [CommonModule, FormsModule, NumberPipe, DatePipe],
+  imports: [CommonModule, FormsModule, NumberPipe, DatePipe, DecimalInputComponent],
   templateUrl: './trade-form.component.html',
 })
 export class TradeFormComponent implements OnInit {
@@ -137,7 +138,8 @@ export class TradeFormComponent implements OnInit {
     this.form.update(f => ({ ...f, [key]: value }));
   }
 
-  /** Called from the template's price input — marks the field as user-edited. */
+  /** Called from the price input — marks the field as user-edited so ticker/date
+   *  changes no longer overwrite it. */
   onPriceInput(value: number): void {
     this.priceTouched.set(true);
     this.patch('price', value);

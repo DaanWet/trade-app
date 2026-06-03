@@ -47,9 +47,7 @@
 
     <div class="col-md-2">
       <label class="form-label small">Aandelen</label>
-      <input type="number" step="any" min="0" class="form-control"
-             [value]="form().shares"
-             (input)="patch('shares', $any($event.target).valueAsNumber || 0)" />
+      <app-decimal-input [value]="form().shares" (valueChange)="patch('shares', $event)" />
     </div>
 
     <div class="col-md-2">
@@ -59,9 +57,7 @@
           <span class="spinner-border spinner-border-sm text-muted"></span>
         }
       </label>
-      <input type="number" step="any" min="0" class="form-control"
-             [value]="form().price"
-             (input)="onPriceInput($any($event.target).valueAsNumber || 0)" />
+      <app-decimal-input [value]="form().price" (valueChange)="onPriceInput($event)" />
       @if (suggestedPrice(); as s) {
         <div class="form-text text-muted small d-flex gap-2 align-items-center">
           <span>Voorstel: {{ s.price | num:4 }} {{ s.currency }} ({{ s.date | d }})</span>
@@ -84,9 +80,7 @@
 
     <div class="col-md-1">
       <label class="form-label small">Kosten</label>
-      <input type="number" step="any" min="0" class="form-control"
-             [value]="form().fees"
-             (input)="patch('fees', $any($event.target).valueAsNumber || 0)" />
+      <app-decimal-input [value]="form().fees ?? 0" (valueChange)="patch('fees', $event)" />
     </div>
 
     <div class="col-12">
