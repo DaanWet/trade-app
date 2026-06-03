@@ -1,5 +1,4 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { PositionsTableComponent } from '../../shared/positions-table/positions-table.component';
 import { PortfolioChartComponent } from '../../shared/price-chart/portfolio-chart.component';
@@ -10,7 +9,7 @@ import type { PositionsResponse, PortfolioPoint } from '../../models';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, PositionsTableComponent, PortfolioChartComponent, MoneyPipe, PercentPipe],
+  imports: [PositionsTableComponent, PortfolioChartComponent, MoneyPipe, PercentPipe],
   templateUrl: './dashboard.component.html',
 })
 export class DashboardComponent implements OnInit {

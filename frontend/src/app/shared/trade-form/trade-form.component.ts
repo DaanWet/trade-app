@@ -1,5 +1,4 @@
 import { Component, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import type { Trade, TradeInput, TradeSide, TickerSearchResult } from '../../models';
@@ -25,7 +24,7 @@ function isValidIsoDate(s: string): boolean {
 @Component({
   selector: 'app-trade-form',
   standalone: true,
-  imports: [CommonModule, FormsModule, NumberPipe, DatePipe, DecimalInputComponent],
+  imports: [FormsModule, NumberPipe, DatePipe, DecimalInputComponent],
   templateUrl: './trade-form.component.html',
 })
 export class TradeFormComponent implements OnInit {

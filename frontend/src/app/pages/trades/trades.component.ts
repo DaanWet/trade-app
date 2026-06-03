@@ -1,5 +1,4 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { TradeFormComponent } from '../../shared/trade-form/trade-form.component';
 import { MoneyPipe, SharesPipe, DatePipe } from '../../shared/number-format/format.pipes';
@@ -8,7 +7,7 @@ import type { Trade } from '../../models';
 @Component({
   selector: 'app-trades',
   standalone: true,
-  imports: [CommonModule, TradeFormComponent, MoneyPipe, SharesPipe, DatePipe],
+  imports: [TradeFormComponent, MoneyPipe, SharesPipe, DatePipe],
   templateUrl: './trades.component.html',
 })
 export class TradesComponent implements OnInit {

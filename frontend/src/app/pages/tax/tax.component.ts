@@ -1,5 +1,4 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { MoneyPipe } from '../../shared/number-format/format.pipes';
 import { pnlClass } from '../../utils/format';
@@ -8,7 +7,7 @@ import type { TaxReport } from '../../models';
 @Component({
   selector: 'app-tax',
   standalone: true,
-  imports: [CommonModule, MoneyPipe],
+  imports: [MoneyPipe],
   templateUrl: './tax.component.html',
 })
 export class TaxComponent implements OnInit {
