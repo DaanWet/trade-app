@@ -5,7 +5,7 @@ import type { Database } from 'better-sqlite3';
  * To add a new migration: bump SCHEMA_VERSION and add a new block at the bottom.
  */
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export function runMigrations(db: Database): void {
   db.exec(`
@@ -81,6 +81,25 @@ export function runMigrations(db: Database): void {
       CREATE INDEX idx_daily_prices_symbol ON daily_prices(symbol, price_date);
     `);
     db.prepare(`INSERT INTO schema_version (version) VALUES (?)`).run(2);
+  }
+
+  if (current < 3) {
+    db.exec(`
+      -- Cash deposits/withdrawals into the portfolio. The current cash balance is
+      -- derived: net deposits − net invested in stocks (see services/cashService.ts).
+      -- amount is always positive; the type determines the sign.
+      CREATE TABLE cash_transactions (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        type       TEXT NOT NULL CHECK (type IN ('DEPOSIT', 'WITHDRAWAL')),
+        amount     REAL NOT NULL CHECK (amount > 0),
+        currency   TEXT NOT NULL,                          -- ISO 4217
+        tx_date    TEXT NOT NULL,                          -- ISO date YYYY-MM-DD
+        notes      TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_cash_tx_date ON cash_transactions(tx_date);
+    `);
+    db.prepare(`INSERT INTO schema_version (version) VALUES (?)`).run(3);
   }
 
   console.log(`[schema] At version ${SCHEMA_VERSION}`);

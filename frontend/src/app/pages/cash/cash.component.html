@@ -1,0 +1,94 @@
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Cash</h2>
+  @if (!showForm()) {
+    <button class="btn btn-primary" (click)="newTx()">
+      <i class="bi bi-plus-lg me-1"></i>Storting / opname
+    </button>
+  }
+</div>
+
+@if (error()) {
+  <div class="alert alert-danger">{{ error() }}</div>
+}
+
+@if (data(); as d) {
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="card p-3">
+        <div class="text-muted small">Cash-balans</div>
+        <div class="fs-3 fw-bold" [class]="pnlClass(d.summary.cash_balance)">
+          {{ d.summary.cash_balance | money: d.summary.display_currency:0 }}
+        </div>
+        @if (d.summary.cash_balance < 0) {
+          <div class="small text-danger">
+            <i class="bi bi-exclamation-triangle me-1"></i>Negatief — meer belegd/opgenomen dan gestort.
+          </div>
+        }
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card p-3">
+        <div class="text-muted small">Netto gestort</div>
+        <div class="fs-3 fw-bold">{{ d.summary.net_deposits | money: d.summary.display_currency:0 }}</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card p-3">
+        <div class="text-muted small">Geïnvesteerd in aandelen</div>
+        <div class="fs-3 fw-bold">{{ d.summary.invested | money: d.summary.display_currency:0 }}</div>
+      </div>
+    </div>
+  </div>
+}
+
+@if (showForm()) {
+  <div class="mb-4">
+    <app-cash-form
+      [initial]="editing()"
+      (saved)="onSaved()"
+      (cancelled)="onCancel()"
+    />
+  </div>
+}
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Datum</th>
+          <th>Type</th>
+          <th class="num">Bedrag</th>
+          <th>Notities</th>
+          <th class="num"></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (tx of data()?.transactions ?? []; track tx.id) {
+          <tr>
+            <td>{{ tx.tx_date | d }}</td>
+            <td>
+              <span class="badge" [class.bg-success]="tx.type === 'DEPOSIT'" [class.bg-warning]="tx.type === 'WITHDRAWAL'">
+                {{ tx.type === 'DEPOSIT' ? 'Storting' : 'Opname' }}
+              </span>
+            </td>
+            <td class="num">{{ tx.amount | money: tx.currency }}</td>
+            <td class="text-muted small">{{ tx.notes }}</td>
+            <td class="num">
+              <button class="btn btn-sm btn-outline-secondary me-1" (click)="edit(tx)" title="Aanpassen">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" (click)="remove(tx)" title="Verwijderen">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="5" class="text-center text-muted py-4">Nog geen cash-transacties. Voeg een storting toe.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

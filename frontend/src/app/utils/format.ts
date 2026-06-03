@@ -61,3 +61,6 @@ export function pnlClass(value: number | null | undefined): string {
   if (value == null || value === 0) return '';
   return value > 0 ? 'text-success' : 'text-danger';
 }
+
+/** Currencies offered in the trade- and cash-form selectors. */
+export const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'];

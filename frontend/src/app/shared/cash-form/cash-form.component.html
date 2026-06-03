@@ -1,0 +1,55 @@
+<form (ngSubmit)="submit()" class="card p-3">
+  <h5 class="mb-3">{{ initial() ? 'Cash-transactie aanpassen' : 'Nieuwe cash-transactie' }}</h5>
+
+  <div class="row g-3">
+    <div class="col-md-2">
+      <label class="form-label small">Type</label>
+      <select class="form-select" [value]="form().type"
+              (change)="patch('type', $any($event.target).value)">
+        @for (t of types; track t) {
+          <option [value]="t">{{ t === 'DEPOSIT' ? 'Storting' : 'Opname' }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="col-md-2">
+      <label class="form-label small">Datum</label>
+      <input type="date" class="form-control" [value]="form().tx_date"
+             (change)="patch('tx_date', $any($event.target).value)" />
+    </div>
+
+    <div class="col-md-3">
+      <label class="form-label small">Bedrag</label>
+      <app-decimal-input [value]="form().amount" (valueChange)="patch('amount', $event)" />
+    </div>
+
+    <div class="col-md-2">
+      <label class="form-label small">Currency</label>
+      <select class="form-select" [value]="form().currency"
+              (change)="patch('currency', $any($event.target).value)">
+        @for (c of currencies; track c) {
+          <option [value]="c">{{ c }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="col-12">
+      <label class="form-label small">Notities</label>
+      <input type="text" class="form-control"
+             [value]="form().notes ?? ''"
+             (input)="patch('notes', $any($event.target).value)" />
+    </div>
+  </div>
+
+  @if (error()) {
+    <div class="alert alert-danger mt-3 mb-0 py-2">{{ error() }}</div>
+  }
+
+  <div class="d-flex gap-2 mt-3">
+    <button type="submit" class="btn btn-primary" [disabled]="saving()">
+      @if (saving()) { <span class="spinner-border spinner-border-sm me-2"></span> }
+      {{ initial() ? 'Bijwerken' : 'Toevoegen' }}
+    </button>
+    <button type="button" class="btn btn-outline-secondary" (click)="cancelled.emit()">Annuleren</button>
+  </div>
+</form>

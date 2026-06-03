@@ -257,7 +257,8 @@ async function sumConverted(
   return total;
 }
 
-export interface PortfolioTotals {
+/** Stock-only portfolio totals (what totalsOf computes from positions). */
+export interface StockTotals {
   display_currency: string;
   cost_basis: number;
   market_value: number;
@@ -267,7 +268,17 @@ export interface PortfolioTotals {
   total_pnl: number;
 }
 
-export function totalsOf(positions: PositionMetrics[]): PortfolioTotals {
+/** Cash + net-worth allocation, layered on top by the positions route via cashService. */
+export interface CashAllocation {
+  cash_balance: number;
+  net_worth: number; // market_value + cash_balance
+  cash_pct: number; // share of net worth held in cash (clamped to [0,100])
+  invested_pct: number; // share of net worth held in stocks (clamped to [0,100])
+}
+
+export type PortfolioTotals = StockTotals & CashAllocation;
+
+export function totalsOf(positions: PositionMetrics[]): StockTotals {
   let costBasis = 0, marketValue = 0, unrealized = 0, realized = 0;
   let displayCurrency = 'EUR';
   for (const p of positions) {

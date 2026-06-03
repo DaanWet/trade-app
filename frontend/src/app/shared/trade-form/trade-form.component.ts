@@ -5,8 +5,7 @@ import type { Trade, TradeInput, TradeSide, TickerSearchResult } from '../../mod
 import { Subject, catchError, debounceTime, distinctUntilChanged, of, switchMap } from 'rxjs';
 import { NumberPipe, DatePipe } from '../number-format/format.pipes';
 import { DecimalInputComponent } from '../decimal-input/decimal-input.component';
-
-const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'];
+import { COMMON_CURRENCIES } from '../../utils/format';
 
 /**
  * Strict YYYY-MM-DD validation. Rejects partial input ('2025-1'), nonsensical

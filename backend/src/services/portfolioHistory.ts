@@ -1,4 +1,4 @@
-import { listTrades, distinctTickers } from '../queries/trades';
+import { listTrades, distinctTickers, tradeCashFlow } from '../queries/trades';
 import { fetchHistorical } from './marketData';
 import { convert, warmHistoricalRates } from './fxService';
 import { getSetting } from '../helpers/settings';
@@ -79,8 +79,7 @@ export async function buildPortfolioHistory(): Promise<PortfolioPoint[]> {
     for (const t of dayTrades) {
       const sign = t.side === 'BUY' ? 1 : -1;
       shares.set(t.ticker, (shares.get(t.ticker) ?? 0) + sign * t.shares);
-      const cashFlow = sign * (t.shares * t.price + sign * t.fees);
-      invested += await convert(cashFlow, t.currency, displayCurrency, t.trade_date);
+      invested += await convert(tradeCashFlow(t), t.currency, displayCurrency, t.trade_date);
     }
 
     // Compute market value at end-of-day (only on weekdays — Yahoo skips weekends)

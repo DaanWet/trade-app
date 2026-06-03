@@ -11,6 +11,9 @@ import type {
   TickerSearchResult,
   TickerQuote,
   TaxReport,
+  CashResponse,
+  CashTransaction,
+  CashInput,
 } from '../models';
 
 @Injectable({ providedIn: 'root' })
@@ -56,6 +59,20 @@ export class ApiService {
     return this.http.get<{ price: number; currency: string | null; date: string }>(
       `${this.base}/prices/at/${encodeURIComponent(symbol)}?date=${encodeURIComponent(date)}`,
     );
+  }
+
+  // Cash
+  getCash(): Observable<CashResponse> {
+    return this.http.get<CashResponse>(`${this.base}/cash`);
+  }
+  createCashTransaction(input: CashInput): Observable<CashTransaction> {
+    return this.http.post<CashTransaction>(`${this.base}/cash`, input);
+  }
+  updateCashTransaction(id: number, input: CashInput): Observable<CashTransaction> {
+    return this.http.put<CashTransaction>(`${this.base}/cash/${id}`, input);
+  }
+  deleteCashTransaction(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/cash/${id}`);
   }
 
   // Tax

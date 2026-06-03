@@ -57,6 +57,43 @@ export interface PortfolioTotals {
   unrealized_pct: number;
   realized_pnl: number;
   total_pnl: number;
+
+  cash_balance: number;
+  net_worth: number;
+  cash_pct: number;
+  invested_pct: number;
+}
+
+export type CashTxType = 'DEPOSIT' | 'WITHDRAWAL';
+
+export interface CashTransaction {
+  id: number;
+  type: CashTxType;
+  amount: number;
+  currency: string;
+  tx_date: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface CashInput {
+  type: CashTxType;
+  amount: number;
+  currency: string;
+  tx_date: string;
+  notes?: string | null;
+}
+
+export interface CashSummary {
+  display_currency: string;
+  net_deposits: number;
+  invested: number;
+  cash_balance: number;
+}
+
+export interface CashResponse {
+  transactions: CashTransaction[];
+  summary: CashSummary;
 }
 
 export interface PositionsResponse {

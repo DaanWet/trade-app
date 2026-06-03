@@ -9,6 +9,7 @@ import positionsRouter from './routes/positions';
 import pricesRouter from './routes/prices';
 import taxRouter from './routes/tax';
 import settingsRouter from './routes/settings';
+import cashRouter from './routes/cash';
 
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? 'http://localhost:4200,http://localhost:4222,http://localhost:33793')
   .split(',')
@@ -37,6 +38,7 @@ app.use('/api/positions', positionsRouter);
 app.use('/api/prices', pricesRouter);
 app.use('/api/tax', taxRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/cash', cashRouter);
 
 if (STATIC_DIR) {
   app.use(express.static(STATIC_DIR));

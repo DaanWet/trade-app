@@ -83,3 +83,17 @@ export function distinctTickers(): string[] {
   return (db.prepare(`SELECT DISTINCT ticker FROM trades ORDER BY ticker`).all() as { ticker: string }[])
     .map(r => r.ticker);
 }
+
+/**
+ * Net cash a trade pulls into the position, in the trade's own currency
+ * (the "invested" sign convention):
+ *   BUY  → +(shares*price + fees)   cash leaves the account, into the position
+ *   SELL → −(shares*price − fees)   cash returns from the position
+ * The fee always works against you (added on a buy, subtracted on a sell);
+ * keeping that subtlety in one place stops the cash balance and the portfolio
+ * history's `invested` series from ever drifting apart.
+ */
+export function tradeCashFlow(t: Pick<TradeRow, 'side' | 'shares' | 'price' | 'fees'>): number {
+  const sign = t.side === 'BUY' ? 1 : -1;
+  return sign * (t.shares * t.price + sign * t.fees);
+}

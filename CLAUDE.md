@@ -18,11 +18,11 @@
 ```
 backend/src/
   index.ts          — standalone dev server: imports app, app.listen(PORT=3100)
-  app.ts            — builds Express app: mounts 5 routers, CORS, static SPA (prod), error handler; exports `app` (so Electron can run it in-process)
+  app.ts            — builds Express app: mounts 6 routers, CORS, static SPA (prod), error handler; exports `app` (so Electron can run it in-process)
   db.ts             — SQLite singleton, WAL-mode, foreign keys ON
   schema.ts         — DB schema + migrations (idempotent, version-tracked)
-  routes/           — trades, positions, prices, tax, settings
-  queries/          — trades.ts, prices.ts (better-sqlite3 statements)
+  routes/           — trades, positions, prices, tax, settings, cash
+  queries/          — trades.ts, prices.ts, cash.ts (better-sqlite3 statements)
   services/
     yahooClient.ts       — single shared yahoo-finance2 v3 instance (used by yahoo* providers)
     providers/
@@ -35,9 +35,10 @@ backend/src/
     fxService.ts         — convert/getRate/warmHistoricalRates with fx_rates cache + forward-fill (uses fxProvider)
     positionsCalc.ts     — FIFO walker (BUY → open lots, SELL → realized lots), per-ticker metrics
     portfolioHistory.ts  — Daily time-series of portfolio market value vs invested
+    cashService.ts       — derived cash balance (net deposits − net invested), display currency
     taxCalc.ts           — Belgian "meerwaardebelasting" report (per-year, parameterizable)
   helpers/
-    constants.ts    — SETTING_KEYS, TRADE_SIDES, PRICE_CACHE_TTL_SECONDS
+    constants.ts    — SETTING_KEYS, TRADE_SIDES, CASH_TX_TYPES, PRICE_CACHE_TTL_SECONDS
     errors.ts       — errorMessage(), HttpError class
     settings.ts     — getSetting(), upsertSetting(), getAllSettings()
 
@@ -54,9 +55,11 @@ frontend/src/app/
     positions-table/               — reusable position grid component
     price-chart/portfolio-chart.component.ts — Chart.js line chart (market value vs invested)
     trade-form/                    — create/edit form with ticker autocomplete (Yahoo search)
+    cash-form/                     — create/edit form for cash deposits/withdrawals
   pages/
-    dashboard/    — totals cards + portfolio chart + positions table
+    dashboard/    — totals cards (incl. cash) + allocation bar + portfolio chart + positions table
     trades/       — list with edit/delete + inline form for new/edit
+    cash/         — cash balance summary + deposits/withdrawals list with inline form
     tax/          — yearly tax report cards
     settings/     — display currency selector
 
@@ -72,8 +75,9 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - **tickers** (cache): symbol PK, name, currency, last_price, last_price_at, exchange, quote_type. 5-min TTL on live quotes.
 - **fx_rates** (cache): (base, quote, rate_date) PK, rate. Forward-filled across non-trading days; past dates immutable.
 - **daily_prices** (cache): (symbol, price_date) PK, close. Forward-filled across non-trading days; past dates immutable.
+- **cash_transactions**: id, type ('DEPOSIT'/'WITHDRAWAL'), amount (>0), currency, tx_date, notes, created_at
 - **settings**: key-value (display_currency default 'EUR')
-- **schema_version**: tracks applied migrations (current: 2)
+- **schema_version**: tracks applied migrations (current: 3)
 
 ## API endpoints
 
@@ -94,6 +98,9 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `GET    /api/tax` → `{ params, years: TaxYearReport[] }` (BE meerwaardebelasting)
 - `GET    /api/tax/lots` — every realized lot annotated with display-currency P&L + tax year
 - `GET    /api/settings`, `GET /api/settings/:key`, `PUT /api/settings`
+- `GET    /api/cash` → `{ transactions: CashTxRow[], summary: CashSummary }`
+- `POST   /api/cash` — create deposit/withdrawal (zod-validated)
+- `PUT    /api/cash/:id`, `DELETE /api/cash/:id`
 
 ## Core domain logic
 
@@ -110,6 +117,15 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `convert(amount, from, to, date?)` is **non-throwing** — falls back to the unconverted amount if no rate is available (offline / provider down).
 - Cache: past-date rates are immutable; today's rate is reused per-day (refreshed at next app start).
 - `warmHistoricalRates(pairs, from, to)`: one provider call per pair, then forward-fill the entire range so per-day `convert()` is a pure cache hit. Crucial for portfolio history.
+
+### Cash position (cashService.ts)
+
+- Single balance in **display currency**, fully **derived** (no ledger): `cash_balance = net_deposits − net_invested`.
+- `net_deposits` = Σ DEPOSIT − Σ WITHDRAWAL, each `convert()`ed at its `tx_date`.
+- `net_invested` mirrors portfolioHistory's cash-flow formula: BUY reduces cash by `shares*price+fees`, SELL increases it by `shares*price−fees` (each converted at `trade_date`).
+- A BUY automatically lowers cash, a SELL raises it — no separate per-trade cash record.
+- **Negative balance is allowed** (warned in UI, never blocked).
+- The positions route folds the summary into `PortfolioTotals` (`cash_balance`, `net_worth`, `cash_pct`, `invested_pct`) so the dashboard stays one API call.
 
 ### Stock price caching (marketData.ts + daily_prices)
 
