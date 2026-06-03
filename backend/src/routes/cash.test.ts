@@ -110,3 +110,57 @@ describe("cash routes", () => {
     expect(res.body.totals.cash_pct).toBe(100);
   });
 });
+
+describe("cash overdraw is hard-blocked", () => {
+  it("blocks a withdrawal that exceeds the balance, leaving the balance unchanged", async () => {
+    await request(app)
+      .post("/api/cash")
+      .send({ type: "DEPOSIT", amount: 100, currency: "EUR", tx_date: "2026-01-02" });
+
+    const res = await request(app)
+      .post("/api/cash")
+      .send({ type: "WITHDRAWAL", amount: 500, currency: "EUR", tx_date: "2026-02-01" });
+    expect(res.status).toBe(400);
+
+    const list = await request(app).get("/api/cash");
+    expect(list.body.transactions).toHaveLength(1);
+    expect(list.body.summary.cash_balance).toBe(100);
+  });
+
+  it("allows a withdrawal within the balance", async () => {
+    await request(app)
+      .post("/api/cash")
+      .send({ type: "DEPOSIT", amount: 100, currency: "EUR", tx_date: "2026-01-02" });
+    const res = await request(app)
+      .post("/api/cash")
+      .send({ type: "WITHDRAWAL", amount: 40, currency: "EUR", tx_date: "2026-02-01" });
+    expect(res.status).toBe(201);
+  });
+
+  it("blocks shrinking a deposit below what is already invested", async () => {
+    const dep = await request(app)
+      .post("/api/cash")
+      .send({ type: "DEPOSIT", amount: 600, currency: "EUR", tx_date: "2026-01-02" });
+    await request(app)
+      .post("/api/trades?confirm=1")
+      .send({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 60, currency: "EUR" });
+
+    // Cash is now 0; lowering the deposit to 100 would make it −500.
+    const res = await request(app)
+      .put(`/api/cash/${dep.body.id}`)
+      .send({ type: "DEPOSIT", amount: 100, currency: "EUR", tx_date: "2026-01-02" });
+    expect(res.status).toBe(400);
+  });
+
+  it("blocks deleting a deposit whose cash is already invested", async () => {
+    const dep = await request(app)
+      .post("/api/cash")
+      .send({ type: "DEPOSIT", amount: 600, currency: "EUR", tx_date: "2026-01-02" });
+    await request(app)
+      .post("/api/trades?confirm=1")
+      .send({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 60, currency: "EUR" });
+
+    const del = await request(app).delete(`/api/cash/${dep.body.id}`);
+    expect(del.status).toBe(400);
+  });
+});

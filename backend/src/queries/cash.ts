@@ -61,3 +61,9 @@ export function updateCashTx(id: number, input: CashTxInput): CashTxRow | null {
 export function deleteCashTx(id: number): boolean {
   return db.prepare(`DELETE FROM cash_transactions WHERE id = ?`).run(id).changes > 0;
 }
+
+/** Cash a transaction adds to the balance, in its own currency:
+ *  DEPOSIT → +amount, WITHDRAWAL → −amount. */
+export function cashTxFlow(tx: Pick<CashTxRow, 'type' | 'amount'>): number {
+  return (tx.type === 'DEPOSIT' ? 1 : -1) * tx.amount;
+}

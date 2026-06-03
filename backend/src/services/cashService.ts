@@ -1,4 +1,4 @@
-import { listCashTx } from '../queries/cash';
+import { listCashTx, cashTxFlow, type CashTxRow } from '../queries/cash';
 import { listTrades, tradeCashFlow, type TradeRow } from '../queries/trades';
 import { convert } from './fxService';
 import { getSetting } from '../helpers/settings';
@@ -27,8 +27,7 @@ export async function computeCashSummary(): Promise<CashSummary> {
 
   let netDeposits = 0;
   for (const tx of listCashTx()) {
-    const sign = tx.type === 'DEPOSIT' ? 1 : -1;
-    netDeposits += sign * (await convert(tx.amount, tx.currency, displayCurrency, tx.tx_date));
+    netDeposits += await convert(cashTxFlow(tx), tx.currency, displayCurrency, tx.tx_date);
   }
 
   let invested = 0;
@@ -45,13 +44,28 @@ export async function computeCashSummary(): Promise<CashSummary> {
 }
 
 /** The fields of a trade needed to value its cash effect. */
-type TradeCashFields = Pick<TradeRow, 'side' | 'shares' | 'price' | 'fees' | 'currency' | 'trade_date'>;
+export type TradeCashFields = Pick<TradeRow, 'side' | 'shares' | 'price' | 'fees' | 'currency' | 'trade_date'>;
+
+/** User-facing shortfall message, shared by the trade- and cash-overdraw responses. */
+export function cashShortfallMessage(subject: string, projected: number, cashBalance: number): string {
+  return `Onvoldoende cash: deze ${subject} brengt je saldo op ${projected.toFixed(2)} (nu ${cashBalance.toFixed(2)}).`;
+}
+
+/** The fields of a cash transaction needed to value its cash effect. */
+export type CashTxCashFields = Pick<CashTxRow, 'type' | 'amount' | 'currency' | 'tx_date'>;
 
 export interface CashProjection {
   cash_balance: number; // current balance, display currency
   projected: number; // balance after applying `next` (replacing `previous`, if editing)
-  /** true when the trade lowers cash AND ends up negative — worth confirming. */
+  /** true when the change lowers cash AND ends up negative. */
   overdraws: boolean;
+}
+
+const EPS = 1e-6;
+
+/** Does this projection lower cash into the negative? (A change that raises cash never does.) */
+function overdraws(cashBalance: number, projected: number): boolean {
+  return projected < -EPS && projected < cashBalance - EPS;
 }
 
 /**
@@ -72,6 +86,26 @@ export async function projectCashAfterTrade(
   if (previous) projected += await convert(tradeCashFlow(previous), previous.currency, displayCurrency, previous.trade_date);
   projected -= await convert(tradeCashFlow(next), next.currency, displayCurrency, next.trade_date);
 
-  const EPS = 1e-6;
-  return { cash_balance, projected, overdraws: projected < -EPS && projected < cash_balance - EPS };
+  return { cash_balance, projected, overdraws: overdraws(cash_balance, projected) };
+}
+
+/**
+ * Project the cash balance after a cash-transaction change, in display currency.
+ * `next` is the new row (null when deleting); pass the existing row as `previous`
+ * for an edit/delete so its current effect is swapped out. `overdraws` flags a
+ * change that lowers cash into the negative (e.g. a withdrawal beyond the balance).
+ */
+export async function projectCashAfterCashTx(
+  next: CashTxCashFields | null,
+  previous?: CashTxCashFields | null,
+): Promise<CashProjection> {
+  const displayCurrency = getSetting(SETTING_KEYS.DISPLAY_CURRENCY) ?? 'EUR';
+  const { cash_balance } = await computeCashSummary();
+
+  let projected = cash_balance;
+  // computeCashSummary() already includes `previous` (it is in the DB); back it out.
+  if (previous) projected -= await convert(cashTxFlow(previous), previous.currency, displayCurrency, previous.tx_date);
+  if (next) projected += await convert(cashTxFlow(next), next.currency, displayCurrency, next.tx_date);
+
+  return { cash_balance, projected, overdraws: overdraws(cash_balance, projected) };
 }

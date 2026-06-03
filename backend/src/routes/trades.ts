@@ -9,7 +9,7 @@ import {
   type TradeRow,
 } from '../queries/trades';
 import { fetchQuote } from '../services/marketData';
-import { projectCashAfterTrade } from '../services/cashService';
+import { projectCashAfterTrade, cashShortfallMessage } from '../services/cashService';
 import { errorMessage } from '../helpers/errors';
 
 const router = Router();
@@ -43,7 +43,7 @@ async function cashOverdrawWarning(
   if (!overdraws) return null;
   return {
     code: 'CASH_OVERDRAW',
-    error: `Onvoldoende cash: deze trade brengt je saldo op ${projected.toFixed(2)} (nu ${cash_balance.toFixed(2)}).`,
+    error: cashShortfallMessage('trade', projected, cash_balance),
     cash_balance,
     projected,
   };
