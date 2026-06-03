@@ -6,6 +6,7 @@ import { Subject, catchError, debounceTime, distinctUntilChanged, of, switchMap 
 import { NumberPipe, DatePipe } from '../number-format/format.pipes';
 import { DecimalInputComponent } from '../decimal-input/decimal-input.component';
 import { COMMON_CURRENCIES } from '../../utils/format';
+import { ConfirmService } from '../confirm/confirm.service';
 
 /**
  * Strict YYYY-MM-DD validation. Rejects partial input ('2025-1'), nonsensical
@@ -28,6 +29,7 @@ function isValidIsoDate(s: string): boolean {
 })
 export class TradeFormComponent implements OnInit {
   private api = inject(ApiService);
+  private confirm = inject(ConfirmService);
 
   initial = input<Trade | null>(null);
   saved = output<Trade>();
@@ -205,7 +207,16 @@ export class TradeFormComponent implements OnInit {
       error: err => {
         this.saving.set(false);
         if (!confirm && err?.status === 409 && err?.error?.code === 'CASH_OVERDRAW') {
-          if (window.confirm(`${err.error.error}\n\nToch doorgaan?`)) this.save(true);
+          this.confirm
+            .ask({
+              title: 'Onvoldoende cash',
+              message: `${err.error.error}\n\nToch doorgaan?`,
+              confirmText: 'Toch toevoegen',
+              confirmClass: 'btn-warning',
+            })
+            .then(ok => {
+              if (ok) this.save(true);
+            });
           return;
         }
         this.error.set(err?.error?.error ?? 'Opslaan mislukt');

@@ -80,18 +80,18 @@ describe("cash routes", () => {
     expect(blocked.status).toBe(409);
     expect(blocked.body.code).toBe("CASH_OVERDRAW");
 
-    // Same trade with confirm: true goes through.
+    // Same trade with ?confirm=1 goes through.
     const confirmed = await request(app)
-      .post("/api/trades")
-      .send({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR", confirm: true });
+      .post("/api/trades?confirm=1")
+      .send({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR" });
     expect(confirmed.status).toBe(201);
   });
 
   it("does not warn on a SELL (it raises cash), even with a negative balance", async () => {
     // Buy 10 @ 50 with no deposits → cash already negative.
     await request(app)
-      .post("/api/trades")
-      .send({ ticker: "BBB", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR", confirm: true });
+      .post("/api/trades?confirm=1")
+      .send({ ticker: "BBB", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR" });
     const sell = await request(app)
       .post("/api/trades")
       .send({ ticker: "BBB", trade_date: "2026-02-05", side: "SELL", shares: 5, price: 60, currency: "EUR" });

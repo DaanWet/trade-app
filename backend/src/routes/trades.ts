@@ -6,6 +6,7 @@ import {
   insertTrade,
   updateTrade,
   deleteTrade,
+  type TradeRow,
 } from '../queries/trades';
 import { fetchQuote } from '../services/marketData';
 import { projectCashAfterTrade } from '../services/cashService';
@@ -25,29 +26,27 @@ const tradeSchema = z.object({
 });
 
 /**
- * If this trade would push the cash balance negative (and the client hasn't already
- * confirmed via `confirm: true`), return 409 CASH_OVERDRAW so the UI can ask to proceed.
- * Returns true when a response was sent.
+ * Build a 409 CASH_OVERDRAW body when this trade would push the cash balance
+ * negative and the client hasn't acknowledged it with `?confirm=1`; otherwise null.
+ * Pure — the route decides how to respond.
  */
-async function blockedByCashOverdraw(
-  res: import('express').Response,
+async function cashOverdrawWarning(
   input: z.infer<typeof tradeSchema>,
   confirmed: boolean,
-  previous?: ReturnType<typeof getTrade>,
-): Promise<boolean> {
-  if (confirmed) return false;
+  previous?: TradeRow | null,
+) {
+  if (confirmed) return null;
   const { cash_balance, projected, overdraws } = await projectCashAfterTrade(
     { ...input, fees: input.fees ?? 0 },
     previous,
   );
-  if (!overdraws) return false;
-  res.status(409).json({
+  if (!overdraws) return null;
+  return {
     code: 'CASH_OVERDRAW',
     error: `Onvoldoende cash: deze trade brengt je saldo op ${projected.toFixed(2)} (nu ${cash_balance.toFixed(2)}).`,
     cash_balance,
     projected,
-  });
-  return true;
+  };
 }
 
 router.get('/', (req, res) => {
@@ -67,7 +66,8 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid trade', issues: parsed.error.issues });
   }
   try {
-    if (await blockedByCashOverdraw(res, parsed.data, req.body?.confirm === true)) return;
+    const overdraw = await cashOverdrawWarning(parsed.data, req.query.confirm === '1');
+    if (overdraw) return res.status(409).json(overdraw);
     const trade = insertTrade(parsed.data);
     // Fire-and-forget: warm the ticker cache so dashboard is fast next time.
     fetchQuote(trade.ticker).catch(() => null);
@@ -86,7 +86,8 @@ router.put('/:id', async (req, res) => {
   try {
     const previous = getTrade(id);
     if (!previous) return res.status(404).json({ error: 'Not found' });
-    if (await blockedByCashOverdraw(res, parsed.data, req.body?.confirm === true, previous)) return;
+    const overdraw = await cashOverdrawWarning(parsed.data, req.query.confirm === '1', previous);
+    if (overdraw) return res.status(409).json(overdraw);
     const updated = updateTrade(id, parsed.data);
     if (!updated) return res.status(404).json({ error: 'Not found' });
     res.json(updated);

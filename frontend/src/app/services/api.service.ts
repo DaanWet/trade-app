@@ -27,10 +27,10 @@ export class ApiService {
     return this.http.get<Trade[]>(url);
   }
   createTrade(input: TradeInput, confirm = false): Observable<Trade> {
-    return this.http.post<Trade>(`${this.base}/trades`, confirm ? { ...input, confirm } : input);
+    return this.http.post<Trade>(`${this.base}/trades${confirm ? '?confirm=1' : ''}`, input);
   }
   updateTrade(id: number, input: TradeInput, confirm = false): Observable<Trade> {
-    return this.http.put<Trade>(`${this.base}/trades/${id}`, confirm ? { ...input, confirm } : input);
+    return this.http.put<Trade>(`${this.base}/trades/${id}${confirm ? '?confirm=1' : ''}`, input);
   }
   deleteTrade(id: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/trades/${id}`);

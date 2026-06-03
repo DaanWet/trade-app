@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ApiService } from '../../services/api.service';
+import { ConfirmService } from '../../shared/confirm/confirm.service';
 import { TradeFormComponent } from '../../shared/trade-form/trade-form.component';
 import { MoneyPipe, SharesPipe, DatePipe } from '../../shared/number-format/format.pipes';
 import type { Trade } from '../../models';
@@ -12,6 +13,7 @@ import type { Trade } from '../../models';
 })
 export class TradesComponent implements OnInit {
   private api = inject(ApiService);
+  private confirm = inject(ConfirmService);
 
   trades = signal<Trade[]>([]);
   loading = signal(true);
@@ -48,8 +50,14 @@ export class TradesComponent implements OnInit {
     this.showForm.set(true);
   }
 
-  remove(trade: Trade): void {
-    if (!confirm(`Trade verwijderen: ${trade.side} ${trade.shares} ${trade.ticker} op ${trade.trade_date}?`)) return;
+  async remove(trade: Trade): Promise<void> {
+    const ok = await this.confirm.ask({
+      title: 'Trade verwijderen',
+      message: `Trade verwijderen: ${trade.side} ${trade.shares} ${trade.ticker} op ${trade.trade_date}?`,
+      confirmText: 'Verwijderen',
+      confirmClass: 'btn-danger',
+    });
+    if (!ok) return;
     this.api.deleteTrade(trade.id).subscribe({
       next: () => this.refresh(),
       error: err => this.error.set(err?.error?.error ?? 'Verwijderen mislukt'),

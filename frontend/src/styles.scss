@@ -77,3 +77,17 @@ body {
   background-color: #21262d;
   color: #e6edf3;
 }
+
+/* Modal (confirm dialog) — dark, matching .card */
+.modal-content {
+  background-color: #161b22;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+.modal-header,
+.modal-footer {
+  border-color: #30363d;
+}
+.btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
