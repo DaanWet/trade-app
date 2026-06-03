@@ -140,6 +140,7 @@ export interface TaxParams {
   rate: number;
   exemption: number;
   appliesFrom: number;
+  fotomomentDate: string; // snapshot date (last day before appliesFrom), e.g. 2025-12-31
   currency: string;
 }
 
@@ -147,9 +148,9 @@ export interface TaxYearReport {
   year: number;
   gains: number;
   losses: number;
-  net_gain_pretax: number;
+  net_gain_pretax: number; // gains − losses (same-year losses netted)
   exemption: number;
-  taxable_amount: number;
+  taxable_amount: number; // max(0, net_gain_pretax − exemption) when the year applies
   tax_due: number;
   rate: number;
   currency: string;
@@ -160,4 +161,18 @@ export interface TaxYearReport {
 export interface TaxReport {
   params: TaxParams;
   years: TaxYearReport[];
+}
+
+/** Which cost basis produced a lot's taxable result. */
+export type TaxBasis = 'none' | 'purchase' | 'fotomoment' | 'shielded';
+
+export interface TaxLot extends RealizedLot {
+  year: number;
+  taxable: boolean;
+  cost_basis_display: number;
+  proceeds_display: number;
+  realized_pnl_display: number; // economic P&L: S − P
+  fotomoment_value_display: number | null; // F = close(31/12) × shares, null if N/A
+  taxable_pnl_display: number; // fotomoment-adjusted taxable gain/loss
+  basis_used: TaxBasis;
 }

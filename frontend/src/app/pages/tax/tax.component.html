@@ -7,25 +7,33 @@
 @if (report(); as r) {
   <div class="card p-3 mb-4">
     <div class="row">
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="text-muted small">Tarief</div>
         <div class="fs-5">{{ (r.params.rate * 100).toFixed(0) }}%</div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="text-muted small">Vrijstelling per jaar</div>
         <div class="fs-5">{{ r.params.exemption | money: r.params.currency:0 }}</div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="text-muted small">Van toepassing vanaf</div>
         <div class="fs-5">{{ r.params.appliesFrom }}</div>
       </div>
+      <div class="col-md-3">
+        <div class="text-muted small">Fotomoment</div>
+        <div class="fs-5">{{ r.params.fotomomentDate | d }}</div>
+      </div>
     </div>
     <div class="text-muted small mt-2">
-      Verliezen verminderen winsten <strong>niet</strong>. Berekening op basis van gerealiseerde meerwaarden (FIFO) per kalenderjaar, omgezet naar weergavemunt op verkoopdatum.
+      Gerealiseerde verliezen van hetzelfde jaar <strong>verminderen</strong> de belastbare meerwaarde
+      (binnen één kalenderjaar, geen overdracht naar andere jaren). Voor aandelen aangekocht vóór
+      {{ r.params.appliesFrom }} geldt de waarde op het fotomoment ({{ r.params.fotomomentDate | d }})
+      als kostbasis wanneer die hoger is dan de aankoopprijs. Berekening op basis van gerealiseerde
+      meerwaarden (FIFO) per kalenderjaar, omgezet naar weergavemunt op verkoopdatum.
     </div>
   </div>
 
-  <div class="card">
+  <div class="card mb-4">
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-0">
         <thead>
@@ -34,6 +42,7 @@
             <th class="num"># Lots</th>
             <th class="num">Winsten</th>
             <th class="num">Verliezen</th>
+            <th class="num">Netto</th>
             <th class="num">Vrijstelling</th>
             <th class="num">Belastbaar</th>
             <th class="num">Te betalen</th>
@@ -47,6 +56,7 @@
               <td class="num">{{ y.num_realized_lots }}</td>
               <td class="num text-success">{{ y.gains | money: y.currency }}</td>
               <td class="num text-danger">{{ y.losses | money: y.currency }}</td>
+              <td class="num" [class]="pnlClass(y.net_gain_pretax)">{{ y.net_gain_pretax | money: y.currency }}</td>
               <td class="num">{{ y.exemption | money: y.currency }}</td>
               <td class="num">{{ y.taxable_amount | money: y.currency }}</td>
               <td class="num fw-bold">{{ y.tax_due | money: y.currency }}</td>
@@ -59,12 +69,58 @@
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="8" class="text-center text-muted py-4">Nog geen gerealiseerde meerwaarden.</td></tr>
+            <tr><td colspan="9" class="text-center text-muted py-4">Nog geen gerealiseerde meerwaarden.</td></tr>
           }
         </tbody>
       </table>
     </div>
   </div>
+
+  @if (lots().length) {
+    <h5 class="mb-2">Detail per verkocht lot</h5>
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Aankoop</th>
+              <th>Verkoop</th>
+              <th class="num">Aantal</th>
+              <th class="num">Aankoopwaarde</th>
+              <th class="num">Fotomoment</th>
+              <th class="num">Opbrengst</th>
+              <th class="num">Belastbaar</th>
+              <th>Basis</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (l of lots(); track $index) {
+              <tr>
+                <td class="fw-bold">{{ l.ticker }}</td>
+                <td>{{ l.buy_date | d }}</td>
+                <td>{{ l.sell_date | d }}</td>
+                <td class="num">{{ l.shares | shares }}</td>
+                <td class="num">{{ l.cost_basis_display | money: displayCurrency() }}</td>
+                <td class="num">
+                  @if (l.fotomoment_value_display !== null) {
+                    {{ l.fotomoment_value_display | money: displayCurrency() }}
+                  } @else {
+                    <span class="text-muted">—</span>
+                  }
+                </td>
+                <td class="num">{{ l.proceeds_display | money: displayCurrency() }}</td>
+                <td class="num fw-bold" [class]="pnlClass(l.taxable_pnl_display)">
+                  {{ l.taxable_pnl_display | money: displayCurrency() }}
+                </td>
+                <td><span class="badge" [class]="basisBadgeClass(l.basis_used)">{{ basisLabel(l.basis_used) }}</span></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
 } @else if (loading()) {
   <div class="text-center py-5"><span class="spinner-border"></span></div>
 }

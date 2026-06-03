@@ -138,10 +138,16 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 
 ### Belgian tax (taxCalc.ts)
 
-- Default params: rate 10%, exemption €10,000/year, applies from year 2026.
-- Tax base is **gains only** — losses are tracked separately, not netted (as per BE rules).
-- Per-year report converts each realized lot's P&L to display currency using the **sell-date** FX rate.
-- Years before `appliesFrom` show `applies: false` and `tax_due: 0`.
+- Default params: rate 10%, exemption €10,000/year, applies from year 2026, fotomoment date `2025-12-31`.
+- **Fotomoment basis**: for lots bought **before 2026**, the close on 31/12/2025 (`priceAt`) is the fiscal
+  cost basis. `applyFotomoment(P, S, F)` decides per lot: F ≥ P → `S − F`; F < P → `S − P` if `S ≥ P`,
+  `S − F` if `S ≤ F` (loss from fotomoment), else `0` (shield — purchase price neutralizes a recovery but
+  never creates a deductible loss). Lots bought in 2026+ just use `S − P`.
+- **Same-year losses are netted** against gains before the exemption: `taxable = max(0, (gains − losses) − exemption)`.
+  No carry-over between years (`net_gain_pretax = gains − losses`).
+- Per-lot components (cost basis, proceeds, fotomoment value) are converted to display currency on the **sell date**.
+- `/api/tax/lots` returns each lot enriched with `taxable_pnl_display`, `fotomoment_value_display`, and `basis_used`.
+- Years before `appliesFrom` show `applies: false`, `tax_due: 0` (sold pre-2026 → informational economic P&L only).
 
 ## Locale & formatting
 

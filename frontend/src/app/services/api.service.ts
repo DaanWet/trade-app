@@ -11,6 +11,7 @@ import type {
   TickerSearchResult,
   TickerQuote,
   TaxReport,
+  TaxLot,
   CashResponse,
   CashTransaction,
   CashInput,
@@ -78,6 +79,9 @@ export class ApiService {
   // Tax
   getTaxReport(): Observable<TaxReport> {
     return this.http.get<TaxReport>(`${this.base}/tax`);
+  }
+  getTaxLots(): Observable<TaxLot[]> {
+    return this.http.get<TaxLot[]>(`${this.base}/tax/lots`);
   }
 
   // Settings
