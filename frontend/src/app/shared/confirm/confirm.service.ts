@@ -1,4 +1,5 @@
 import { Injectable, signal } from '@angular/core';
+import { EMPTY, Observable, catchError, from, switchMap, throwError } from 'rxjs';
 
 export interface ConfirmOptions {
   title?: string;
@@ -42,5 +43,30 @@ export class ConfirmService {
     if (!p) return;
     this.pending.set(null);
     p.resolve(ok);
+  }
+
+  /**
+   * Run a mutation that may answer `409 { code: 'CASH_OVERDRAW' }`. On that response,
+   * show the shared overdraw warning and, if the user confirms, retry once with
+   * confirm=true. Cancelling completes silently (no emit, no error). Any other error
+   * propagates to the subscriber unchanged.
+   */
+  confirmOnCashOverdraw<T>(
+    run: (confirm: boolean) => Observable<T>,
+    opts: { confirmText: string; question?: string },
+  ): Observable<T> {
+    return run(false).pipe(
+      catchError(err => {
+        if (err?.status !== 409 || err?.error?.code !== 'CASH_OVERDRAW') return throwError(() => err);
+        return from(
+          this.ask({
+            title: 'Onvoldoende cash',
+            message: `${err.error.error}\n\n${opts.question ?? 'Toch doorgaan?'}`,
+            confirmText: opts.confirmText,
+            confirmClass: 'btn-warning',
+          }),
+        ).pipe(switchMap(ok => (ok ? run(true) : EMPTY)));
+      }),
+    );
   }
 }

@@ -32,8 +32,8 @@ export class ApiService {
   updateTrade(id: number, input: TradeInput, confirm = false): Observable<Trade> {
     return this.http.put<Trade>(`${this.base}/trades/${id}${confirm ? '?confirm=1' : ''}`, input);
   }
-  deleteTrade(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.base}/trades/${id}`);
+  deleteTrade(id: number, confirm = false): Observable<void> {
+    return this.http.delete<void>(`${this.base}/trades/${id}${confirm ? '?confirm=1' : ''}`);
   }
 
   // Positions

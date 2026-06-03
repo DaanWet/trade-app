@@ -125,7 +125,7 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `net_invested` mirrors portfolioHistory's cash-flow formula: BUY reduces cash by `shares*price+fees`, SELL increases it by `shares*price−fees` (each converted at `trade_date`).
 - A BUY automatically lowers cash, a SELL raises it — no separate per-trade cash record.
 - Cash can still go **negative via trades** (you can buy more than you hold), but each side guards it:
-  - **Trades** — a BUY that lowers cash into the negative triggers a *soft confirm*: `POST/PUT /api/trades` returns `409 { code: 'CASH_OVERDRAW' }` unless the request carries `?confirm=1`. The trade-form catches the 409, asks the user (custom Bootstrap modal), and retries with `?confirm=1`. SELLs never trip it.
+  - **Trades** — a trade change that lowers cash into the negative (a BUY, or **deleting a SELL** which removes its proceeds) triggers a *soft confirm*: `POST/PUT/DELETE /api/trades` returns `409 { code: 'CASH_OVERDRAW' }` unless the request carries `?confirm=1`. The trade-form/list catches the 409, asks the user (custom Bootstrap modal), and retries with `?confirm=1`. Adding a SELL or deleting a BUY (both raise cash) never trip it.
   - **Cash ledger** — a withdrawal (or shrinking/deleting a deposit) that would overdraw is *hard-blocked* with `400` on `POST/PUT/DELETE /api/cash`; no bypass. You can't withdraw cash you don't have.
   - Both reuse `overdraws()` + `projectCashAfter{Trade,CashTx}()` in cashService.ts, built on `tradeCashFlow()` / `cashTxFlow()`.
 - The positions route folds the summary into `PortfolioTotals` (`cash_balance`, `net_worth`, `cash_pct`, `invested_pct`) so the dashboard stays one API call.

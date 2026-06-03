@@ -69,22 +69,22 @@ function overdraws(cashBalance: number, projected: number): boolean {
 }
 
 /**
- * Project the cash balance after creating (or editing) a trade, in display currency.
- * For an edit, pass the existing row as `previous` so its effect is swapped out.
- * `overdraws` only flags trades that *reduce* cash into the negative — a SELL (which
- * raises cash) never trips it, even if the balance was already negative.
+ * Project the cash balance after a trade change, in display currency.
+ * `next` is the new row (null when deleting); pass the existing row as `previous`
+ * for an edit/delete so its current effect is swapped out. `overdraws` only flags
+ * changes that *reduce* cash into the negative — adding a SELL or deleting a BUY
+ * (both raise cash) never trip it, even if the balance was already negative.
  */
 export async function projectCashAfterTrade(
-  next: TradeCashFields,
+  next: TradeCashFields | null,
   previous?: TradeCashFields | null,
 ): Promise<CashProjection> {
-  const displayCurrency = getSetting(SETTING_KEYS.DISPLAY_CURRENCY) ?? 'EUR';
-  const { cash_balance } = await computeCashSummary();
+  const { cash_balance, display_currency } = await computeCashSummary();
 
   let projected = cash_balance;
   // computeCashSummary() already includes `previous` (it is in the DB); back it out.
-  if (previous) projected += await convert(tradeCashFlow(previous), previous.currency, displayCurrency, previous.trade_date);
-  projected -= await convert(tradeCashFlow(next), next.currency, displayCurrency, next.trade_date);
+  if (previous) projected += await convert(tradeCashFlow(previous), previous.currency, display_currency, previous.trade_date);
+  if (next) projected -= await convert(tradeCashFlow(next), next.currency, display_currency, next.trade_date);
 
   return { cash_balance, projected, overdraws: overdraws(cash_balance, projected) };
 }
@@ -99,13 +99,12 @@ export async function projectCashAfterCashTx(
   next: CashTxCashFields | null,
   previous?: CashTxCashFields | null,
 ): Promise<CashProjection> {
-  const displayCurrency = getSetting(SETTING_KEYS.DISPLAY_CURRENCY) ?? 'EUR';
-  const { cash_balance } = await computeCashSummary();
+  const { cash_balance, display_currency } = await computeCashSummary();
 
   let projected = cash_balance;
   // computeCashSummary() already includes `previous` (it is in the DB); back it out.
-  if (previous) projected -= await convert(cashTxFlow(previous), previous.currency, displayCurrency, previous.tx_date);
-  if (next) projected += await convert(cashTxFlow(next), next.currency, displayCurrency, next.tx_date);
+  if (previous) projected -= await convert(cashTxFlow(previous), previous.currency, display_currency, previous.tx_date);
+  if (next) projected += await convert(cashTxFlow(next), next.currency, display_currency, next.tx_date);
 
   return { cash_balance, projected, overdraws: overdraws(cash_balance, projected) };
 }

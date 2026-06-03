@@ -9,7 +9,7 @@ import {
   type TradeRow,
 } from '../queries/trades';
 import { fetchQuote } from '../services/marketData';
-import { projectCashAfterTrade, cashShortfallMessage } from '../services/cashService';
+import { projectCashAfterTrade, cashShortfallMessage, type TradeCashFields } from '../services/cashService';
 import { errorMessage } from '../helpers/errors';
 
 const router = Router();
@@ -26,27 +26,29 @@ const tradeSchema = z.object({
 });
 
 /**
- * Build a 409 CASH_OVERDRAW body when this trade would push the cash balance
+ * Build a 409 CASH_OVERDRAW body when a trade change would push the cash balance
  * negative and the client hasn't acknowledged it with `?confirm=1`; otherwise null.
- * Pure — the route decides how to respond.
+ * `next` is null when deleting. Pure — the route decides how to respond.
  */
 async function cashOverdrawWarning(
-  input: z.infer<typeof tradeSchema>,
   confirmed: boolean,
+  next: TradeCashFields | null,
   previous?: TradeRow | null,
 ) {
   if (confirmed) return null;
-  const { cash_balance, projected, overdraws } = await projectCashAfterTrade(
-    { ...input, fees: input.fees ?? 0 },
-    previous,
-  );
+  const { cash_balance, projected, overdraws } = await projectCashAfterTrade(next, previous);
   if (!overdraws) return null;
   return {
     code: 'CASH_OVERDRAW',
-    error: cashShortfallMessage('trade', projected, cash_balance),
+    error: cashShortfallMessage(next ? 'trade' : 'verwijdering', projected, cash_balance),
     cash_balance,
     projected,
   };
+}
+
+/** Map a validated trade payload to the fields the cash projection needs. */
+function tradeCashFields(input: z.infer<typeof tradeSchema>): TradeCashFields {
+  return { ...input, fees: input.fees ?? 0 };
 }
 
 router.get('/', (req, res) => {
@@ -66,7 +68,7 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid trade', issues: parsed.error.issues });
   }
   try {
-    const overdraw = await cashOverdrawWarning(parsed.data, req.query.confirm === '1');
+    const overdraw = await cashOverdrawWarning(req.query.confirm === '1', tradeCashFields(parsed.data));
     if (overdraw) return res.status(409).json(overdraw);
     const trade = insertTrade(parsed.data);
     // Fire-and-forget: warm the ticker cache so dashboard is fast next time.
@@ -86,7 +88,7 @@ router.put('/:id', async (req, res) => {
   try {
     const previous = getTrade(id);
     if (!previous) return res.status(404).json({ error: 'Not found' });
-    const overdraw = await cashOverdrawWarning(parsed.data, req.query.confirm === '1', previous);
+    const overdraw = await cashOverdrawWarning(req.query.confirm === '1', tradeCashFields(parsed.data), previous);
     if (overdraw) return res.status(409).json(overdraw);
     const updated = updateTrade(id, parsed.data);
     if (!updated) return res.status(404).json({ error: 'Not found' });
@@ -96,10 +98,19 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', (req, res) => {
-  const ok = deleteTrade(parseInt(req.params.id, 10));
-  if (!ok) return res.status(404).json({ error: 'Not found' });
-  res.status(204).end();
+router.delete('/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const previous = getTrade(id);
+    if (!previous) return res.status(404).json({ error: 'Not found' });
+    // Deleting a SELL removes its proceeds and can drive cash negative → soft confirm.
+    const overdraw = await cashOverdrawWarning(req.query.confirm === '1', null, previous);
+    if (overdraw) return res.status(409).json(overdraw);
+    deleteTrade(id);
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ error: errorMessage(err) });
+  }
 });
 
 export default router;

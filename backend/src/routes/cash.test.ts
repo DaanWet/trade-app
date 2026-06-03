@@ -87,6 +87,36 @@ describe("cash routes", () => {
     expect(confirmed.status).toBe(201);
   });
 
+  it("warns (409) when deleting a SELL would overdraw, and proceeds with ?confirm=1", async () => {
+    // Deposit 100, buy 600 (cash −500), sell for 700 (cash 200).
+    await request(app)
+      .post("/api/cash")
+      .send({ type: "DEPOSIT", amount: 100, currency: "EUR", tx_date: "2026-01-02" });
+    await request(app)
+      .post("/api/trades?confirm=1")
+      .send({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 60, currency: "EUR" });
+    const sell = await request(app)
+      .post("/api/trades")
+      .send({ ticker: "AAA", trade_date: "2026-03-01", side: "SELL", shares: 10, price: 70, currency: "EUR" });
+    expect(sell.status).toBe(201);
+
+    // Deleting the SELL removes its +700 proceeds → cash −500 → overdraw warning.
+    const blocked = await request(app).delete(`/api/trades/${sell.body.id}`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe("CASH_OVERDRAW");
+
+    const confirmed = await request(app).delete(`/api/trades/${sell.body.id}?confirm=1`);
+    expect(confirmed.status).toBe(204);
+  });
+
+  it("does not warn when deleting a BUY (it raises cash)", async () => {
+    const buy = await request(app)
+      .post("/api/trades?confirm=1")
+      .send({ ticker: "CCC", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 60, currency: "EUR" });
+    const del = await request(app).delete(`/api/trades/${buy.body.id}`);
+    expect(del.status).toBe(204);
+  });
+
   it("does not warn on a SELL (it raises cash), even with a negative balance", async () => {
     // Buy 10 @ 50 with no deposits → cash already negative.
     await request(app)

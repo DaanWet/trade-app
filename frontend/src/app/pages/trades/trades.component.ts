@@ -58,10 +58,17 @@ export class TradesComponent implements OnInit {
       confirmClass: 'btn-danger',
     });
     if (!ok) return;
-    this.api.deleteTrade(trade.id).subscribe({
-      next: () => this.refresh(),
-      error: err => this.error.set(err?.error?.error ?? 'Verwijderen mislukt'),
-    });
+    // Deleting a SELL can overdraw cash → the backend returns 409; the helper
+    // surfaces the warning and retries once with confirm.
+    this.confirm
+      .confirmOnCashOverdraw(c => this.api.deleteTrade(trade.id, c), {
+        confirmText: 'Toch verwijderen',
+        question: 'Toch verwijderen?',
+      })
+      .subscribe({
+        next: () => this.refresh(),
+        error: err => this.error.set(err?.error?.error ?? 'Verwijderen mislukt'),
+      });
   }
 
   onSaved(): void {

@@ -2,7 +2,7 @@ import { Component, OnInit, computed, effect, inject, input, output, signal } fr
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import type { Trade, TradeInput, TradeSide, TickerSearchResult } from '../../models';
-import { Subject, catchError, debounceTime, distinctUntilChanged, of, switchMap } from 'rxjs';
+import { Subject, catchError, debounceTime, distinctUntilChanged, finalize, of, switchMap } from 'rxjs';
 import { NumberPipe, DatePipe } from '../number-format/format.pipes';
 import { DecimalInputComponent } from '../decimal-input/decimal-input.component';
 import { COMMON_CURRENCIES } from '../../utils/format';
@@ -187,40 +187,17 @@ export class TradeFormComponent implements OnInit {
       this.error.set('Vul ticker, aantal aandelen en prijs in.');
       return;
     }
-    this.save(false);
-  }
-
-  /** Persist the trade. On a CASH_OVERDRAW (409) the user is asked to confirm,
-   *  then we retry once with `confirm` so the backend skips the check. */
-  private save(confirm: boolean): void {
     this.saving.set(true);
-    const f = this.form();
     const init = this.initial();
-    const obs = init
-      ? this.api.updateTrade(init.id, f, confirm)
-      : this.api.createTrade(f, confirm);
-    obs.subscribe({
-      next: trade => {
-        this.saving.set(false);
-        this.saved.emit(trade);
-      },
-      error: err => {
-        this.saving.set(false);
-        if (!confirm && err?.status === 409 && err?.error?.code === 'CASH_OVERDRAW') {
-          this.confirm
-            .ask({
-              title: 'Onvoldoende cash',
-              message: `${err.error.error}\n\nToch doorgaan?`,
-              confirmText: 'Toch toevoegen',
-              confirmClass: 'btn-warning',
-            })
-            .then(ok => {
-              if (ok) this.save(true);
-            });
-          return;
-        }
-        this.error.set(err?.error?.error ?? 'Opslaan mislukt');
-      },
-    });
+    this.confirm
+      .confirmOnCashOverdraw(
+        c => (init ? this.api.updateTrade(init.id, f, c) : this.api.createTrade(f, c)),
+        { confirmText: 'Toch toevoegen' },
+      )
+      .pipe(finalize(() => this.saving.set(false)))
+      .subscribe({
+        next: trade => this.saved.emit(trade),
+        error: err => this.error.set(err?.error?.error ?? 'Opslaan mislukt'),
+      });
   }
 }
