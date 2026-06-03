@@ -1,20 +1,56 @@
 name: Release
 
 # Trigger:
-# - Push a tag starting with `v` (e.g. v0.1.0) → builds installers for all
-#   platforms and publishes them to the GitHub Release for that tag.
+# - Push to `main` → reads the "version" from package.json. If no git tag
+#   `v<version>` exists yet, it creates the tag, builds installers for all
+#   platforms and publishes them to a GitHub Release. So cutting a release is
+#   just: bump package.json version → commit → push.
 # - Manual run via the Actions UI → builds installers and uploads them as
 #   workflow artifacts (no GitHub Release created). Useful for smoke-testing.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write  # needed to create / upload to the GitHub Release
+  contents: write  # needed to push the tag and create / upload to the Release
 
 jobs:
+  # Decide whether this push introduces a new version that needs releasing.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.decide.outputs.version }}
+      should_release: ${{ steps.decide.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history so existing tags are visible
+
+      - name: Determine version & whether to release
+        id: decide
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$version" >/dev/null 2>&1; then
+            echo "Tag v$version already exists — nothing to release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version v$version — will tag and release."
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Only tag on a real push (not manual smoke-test runs).
+      - name: Create & push tag
+        if: steps.decide.outputs.should_release == 'true' && github.event_name == 'push'
+        run: |
+          git tag "v${{ steps.decide.outputs.version }}"
+          git push origin "v${{ steps.decide.outputs.version }}"
+
   build:
+    needs: check
+    # Build on manual runs, or on a push that bumped the version.
+    if: github.event_name == 'workflow_dispatch' || needs.check.outputs.should_release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -66,10 +102,9 @@ jobs:
         run: npm run build
 
       - name: Package & publish
-        # Tag push → publish to the matching GitHub Release (must be pre-release type
-        # because publish.releaseType is set to "prerelease" in package.json).
+        # push (new version) → publish to the GitHub Release for v<version>.
         # workflow_dispatch → just build, artifacts uploaded by next step.
-        run: npx electron-builder --${{ matrix.target }} --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        run: npx electron-builder --${{ matrix.target }} --publish ${{ github.event_name == 'push' && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Disable code signing on macOS for unsigned dev builds.

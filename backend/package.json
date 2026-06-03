@@ -1,6 +1,6 @@
 {
   "name": "trade-app-backend",
-  "version": "0.1.0",
+  "private": true,
   "description": "Trade tracking backend (Express + better-sqlite3)",
   "main": "dist/index.js",
   "type": "commonjs",
@@ -14,7 +14,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.0.1",
-    "yahoo-finance2": "^3.14.0",
+    "yahoo-finance2": "^3.15.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {

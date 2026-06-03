@@ -1,6 +1,6 @@
 {
   "name": "trade-app-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Trade App desktop wrapper (Electron)",
   "main": "electron/dist/main.js",
   "scripts": {
@@ -56,7 +56,7 @@
         "provider": "github",
         "owner": "DaanWet",
         "repo": "trade-app",
-        "releaseType": "prerelease"
+        "releaseType": "release"
       }
     ],
     "win": {
