@@ -17,7 +17,7 @@
       <div class="card p-3">
         <div class="text-muted small">Cash-balans</div>
         <div class="fs-3 fw-bold" [class]="pnlClass(d.summary.cash_balance)">
-          {{ d.summary.cash_balance | money: d.summary.display_currency:0 }}
+          {{ d.summary.cash_balance | money: d.summary.display_currency:2 }}
         </div>
         @if (d.summary.cash_balance < 0) {
           <div class="small text-danger">
@@ -29,13 +29,13 @@
     <div class="col-md-4">
       <div class="card p-3">
         <div class="text-muted small">Netto gestort</div>
-        <div class="fs-3 fw-bold">{{ d.summary.net_deposits | money: d.summary.display_currency:0 }}</div>
+        <div class="fs-3 fw-bold">{{ d.summary.net_deposits | money: d.summary.display_currency:2 }}</div>
       </div>
     </div>
     <div class="col-md-4">
       <div class="card p-3">
         <div class="text-muted small">Geïnvesteerd in aandelen</div>
-        <div class="fs-3 fw-bold">{{ d.summary.invested | money: d.summary.display_currency:0 }}</div>
+        <div class="fs-3 fw-bold">{{ d.summary.invested | money: d.summary.display_currency:2 }}</div>
       </div>
     </div>
   </div>
