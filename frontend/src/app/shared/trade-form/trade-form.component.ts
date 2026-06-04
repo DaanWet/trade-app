@@ -107,7 +107,9 @@ export class TradeFormComponent implements OnInit {
 
     this.searchTerm$.pipe(
       debounceTime(250),
-      switchMap(term => this.api.searchTicker(term)),
+      // Catch INSIDE switchMap — otherwise one HTTP error kills the whole subscription and
+      // all future searches silently stop firing (same reason as priceLookup$ below).
+      switchMap(term => this.api.searchTicker(term).pipe(catchError(() => of([] as TickerSearchResult[])))),
     ).subscribe(results => this.searchResults.set(results));
 
     this.priceLookup$.pipe(

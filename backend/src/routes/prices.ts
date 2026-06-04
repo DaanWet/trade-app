@@ -6,8 +6,12 @@ import { errorMessage } from '../helpers/errors';
 const router = Router();
 
 router.get('/search', async (req, res) => {
-  const q = typeof req.query.q === 'string' ? req.query.q : '';
-  res.json(await searchSymbol(q));
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q : '';
+    res.json(await searchSymbol(q));
+  } catch (err) {
+    res.status(500).json({ error: errorMessage(err) });
+  }
 });
 
 router.get('/quote/:symbol', async (req, res) => {
