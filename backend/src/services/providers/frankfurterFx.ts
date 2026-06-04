@@ -1,3 +1,4 @@
+import { isRateLimitError, markLimited, markRecovered } from '../rateLimitMonitor';
 import type { FxProvider, FxRangePoint } from './types';
 
 /**
@@ -49,8 +50,10 @@ export const frankfurterProvider: FxProvider = {
     const url = `${BASE_URL}${path}?base=${b}&symbols=${q}`;
     try {
       const data = await getJson<FrankfurterLatestResponse>(url);
+      markRecovered('frankfurter');
       return data.rates?.[q] ?? null;
     } catch (err) {
+      if (isRateLimitError(err)) markLimited('frankfurter');
       console.warn(`[frankfurter] fetchRate ${b}/${q}@${date} failed:`, err instanceof Error ? err.message : err);
       return null;
     }
@@ -64,6 +67,7 @@ export const frankfurterProvider: FxProvider = {
     const url = `${BASE_URL}/${isoDate(from)}..${isoDate(to)}?base=${b}&symbols=${q}`;
     try {
       const data = await getJson<FrankfurterRangeResponse>(url);
+      markRecovered('frankfurter');
       const points: FxRangePoint[] = [];
       for (const [date, rates] of Object.entries(data.rates ?? {})) {
         const r = rates[q];
@@ -72,6 +76,7 @@ export const frankfurterProvider: FxProvider = {
       points.sort((a, b) => a.date.localeCompare(b.date));
       return points;
     } catch (err) {
+      if (isRateLimitError(err)) markLimited('frankfurter');
       console.warn(`[frankfurter] fetchRange ${b}/${q} failed:`, err instanceof Error ? err.message : err);
       return [];
     }

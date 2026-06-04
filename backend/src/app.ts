@@ -10,6 +10,7 @@ import pricesRouter from './routes/prices';
 import taxRouter from './routes/tax';
 import settingsRouter from './routes/settings';
 import cashRouter from './routes/cash';
+import { getActiveLimited } from './services/rateLimitMonitor';
 
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? 'http://localhost:4200,http://localhost:4222,http://localhost:33793')
   .split(',')
@@ -28,10 +29,27 @@ app.use(cors({
     if (LOOPBACK_RE.test(origin)) return cb(null, true);
     cb(new Error(`Origin ${origin} not allowed by CORS`));
   },
+  // Let the cross-origin frontend read the rate-limit signal header.
+  exposedHeaders: ['X-Rate-Limited'],
 }));
 app.use(express.json({ limit: '2mb' }));
 
+// Tag every API response with the providers currently rate-limited (if any). We wrap
+// res.json so the header is computed at send-time — capturing a 429 hit *during* this
+// request (the only correct spot in Express 5, since headers can't change after flush).
+app.use((_req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = ((body?: unknown) => {
+    const limited = getActiveLimited();
+    if (limited.length) res.setHeader('X-Rate-Limited', limited.join(','));
+    return originalJson(body);
+  }) as typeof res.json;
+  next();
+});
+
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+// Debug/verification endpoint; the frontend uses the X-Rate-Limited header, not this.
+app.get('/api/status', (_req, res) => res.json({ rateLimited: getActiveLimited() }));
 
 app.use('/api/trades', tradesRouter);
 app.use('/api/positions', positionsRouter);

@@ -1,4 +1,5 @@
 import { yahoo } from '../yahooClient';
+import { isRateLimitError, markLimited, markRecovered } from '../rateLimitMonitor';
 import type {
   PriceProvider,
   PriceQuote,
@@ -19,6 +20,7 @@ export const yahooPriceProvider: PriceProvider = {
     const sym = symbol.toUpperCase();
     try {
       const q = await yahoo.quote(sym);
+      markRecovered('yahoo');
       if (!q) return null;
       const result: PriceQuote = {
         symbol: sym,
@@ -30,6 +32,7 @@ export const yahooPriceProvider: PriceProvider = {
       };
       return result;
     } catch (err) {
+      if (isRateLimitError(err)) markLimited('yahoo');
       console.warn(`[yahooPrice] fetchQuote(${sym}) failed:`, err instanceof Error ? err.message : err);
       return null;
     }
@@ -39,6 +42,7 @@ export const yahooPriceProvider: PriceProvider = {
     const sym = symbol.toUpperCase();
     try {
       const result = await yahoo.chart(sym, { period1: from, period2: to, interval: '1d' });
+      markRecovered('yahoo');
       const out: PriceClose[] = [];
       for (const q of result.quotes ?? []) {
         if (q.close != null && q.date != null) {
@@ -47,6 +51,7 @@ export const yahooPriceProvider: PriceProvider = {
       }
       return out;
     } catch (err) {
+      if (isRateLimitError(err)) markLimited('yahoo');
       console.warn(`[yahooPrice] fetchHistorical(${sym}) failed:`, err instanceof Error ? err.message : err);
       return [];
     }
@@ -56,6 +61,7 @@ export const yahooPriceProvider: PriceProvider = {
     if (!query.trim()) return [];
     try {
       const result = await yahoo.search(query, { quotesCount: 10, newsCount: 0 });
+      markRecovered('yahoo');
       const out: SymbolSearchResult[] = [];
       for (const raw of result.quotes ?? []) {
         const q = raw as Partial<Record<'symbol' | 'longname' | 'shortname' | 'exchange' | 'quoteType', string>>;
@@ -69,6 +75,7 @@ export const yahooPriceProvider: PriceProvider = {
       }
       return out;
     } catch (err) {
+      if (isRateLimitError(err)) markLimited('yahoo');
       console.warn(`[yahooPrice] search(${query}) failed:`, err instanceof Error ? err.message : err);
       return [];
     }

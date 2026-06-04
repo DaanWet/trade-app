@@ -1,4 +1,5 @@
 import { yahoo } from '../yahooClient';
+import { isRateLimitError, markLimited, markRecovered } from '../rateLimitMonitor';
 import type { FxProvider, FxRangePoint } from './types';
 
 /**
@@ -18,6 +19,7 @@ export const yahooFxProvider: FxProvider = {
     try {
       if (date >= today) {
         const r = await yahoo.quote(symbol);
+        markRecovered('yahoo');
         return r?.regularMarketPrice ?? null;
       }
       const target = new Date(date);
@@ -26,12 +28,14 @@ export const yahooFxProvider: FxProvider = {
       const to = new Date(target);
       to.setDate(to.getDate() + 1);
       const result = await yahoo.chart(symbol, { period1: from, period2: to, interval: '1d' });
+      markRecovered('yahoo');
       const candles = (result.quotes ?? []).filter(q => q.close != null);
       if (candles.length === 0) return null;
       const onOrBefore = candles.filter(c => c.date && c.date <= target);
       const pick = onOrBefore.length > 0 ? onOrBefore[onOrBefore.length - 1] : candles[candles.length - 1];
       return (pick.close as number) ?? null;
     } catch (err) {
+      if (isRateLimitError(err)) markLimited('yahoo');
       console.warn(`[yahooFx] fetchRate ${symbol}@${date} failed:`, err instanceof Error ? err.message : err);
       return null;
     }
@@ -44,6 +48,7 @@ export const yahooFxProvider: FxProvider = {
     const symbol = `${b}${q}=X`;
     try {
       const result = await yahoo.chart(symbol, { period1: from, period2: to, interval: '1d' });
+      markRecovered('yahoo');
       const points: FxRangePoint[] = [];
       for (const candle of result.quotes ?? []) {
         if (candle.close != null && candle.date != null) {
@@ -52,6 +57,7 @@ export const yahooFxProvider: FxProvider = {
       }
       return points;
     } catch (err) {
+      if (isRateLimitError(err)) markLimited('yahoo');
       console.warn(`[yahooFx] fetchRange ${symbol} failed:`, err instanceof Error ? err.message : err);
       return [];
     }
