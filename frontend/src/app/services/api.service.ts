@@ -15,6 +15,7 @@ import type {
   CashResponse,
   CashTransaction,
   CashInput,
+  Holdings,
 } from '../models';
 
 @Injectable({ providedIn: 'root' })
@@ -46,6 +47,15 @@ export class ApiService {
   }
   getPortfolioHistory(): Observable<PortfolioPoint[]> {
     return this.http.get<PortfolioPoint[]>(`${this.base}/positions/history`);
+  }
+  /** Open shares held for a ticker; used by the trade-form to validate SELLs.
+   *  `date` caps the walk (inclusive); `excludeTradeId` ignores the trade being edited. */
+  getHoldings(ticker: string, date?: string, excludeTradeId?: number): Observable<Holdings> {
+    const qs =
+      `?ticker=${encodeURIComponent(ticker)}` +
+      (date ? `&date=${encodeURIComponent(date)}` : '') +
+      (excludeTradeId != null ? `&excludeTradeId=${excludeTradeId}` : '');
+    return this.http.get<Holdings>(`${this.base}/positions/holdings${qs}`);
   }
 
   // Prices

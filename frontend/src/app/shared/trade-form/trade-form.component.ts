@@ -3,9 +3,9 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import type { Trade, TradeInput, TradeSide, TickerSearchResult } from '../../models';
 import { Subject, catchError, debounceTime, distinctUntilChanged, finalize, of, switchMap } from 'rxjs';
-import { NumberPipe, DatePipe } from '../number-format/format.pipes';
+import { NumberPipe, DatePipe, SharesPipe } from '../number-format/format.pipes';
 import { DecimalInputComponent } from '../decimal-input/decimal-input.component';
-import { COMMON_CURRENCIES } from '../../utils/format';
+import { COMMON_CURRENCIES, formatShares } from '../../utils/format';
 import { ConfirmService } from '../confirm/confirm.service';
 
 /**
@@ -24,7 +24,7 @@ function isValidIsoDate(s: string): boolean {
 @Component({
   selector: 'app-trade-form',
   standalone: true,
-  imports: [FormsModule, NumberPipe, DatePipe, DecimalInputComponent],
+  imports: [FormsModule, NumberPipe, DatePipe, SharesPipe, DecimalInputComponent],
   templateUrl: './trade-form.component.html',
 })
 export class TradeFormComponent implements OnInit {
@@ -58,11 +58,33 @@ export class TradeFormComponent implements OnInit {
   suggestedPrice = signal<{ price: number; currency: string | null; date: string } | null>(null);
   fetchingPrice = signal(false);
 
+  /** Shares held for the current ticker as of the trade date (null = unknown / not a SELL).
+   *  A helpful hint; the backend remains the authority on the hard block. */
+  held = signal<number | null>(null);
+
   readonly sides: TradeSide[] = ['BUY', 'SELL'];
   readonly currencies = COMMON_CURRENCIES;
 
+  /** True when a SELL would close more shares than are held (drives the inline warning). */
+  sellExceedsHeld = computed(() => {
+    const f = this.form();
+    const h = this.held();
+    return f.side === 'SELL' && h != null && f.shares > h;
+  });
+
   private searchTerm$ = new Subject<string>();
   private priceLookup$ = new Subject<{ ticker: string; date: string }>();
+  private holdingsLookup$ = new Subject<{ ticker: string; date: string }>();
+
+  /** Lookup key for held shares: only for a SELL with a plausible ticker + valid date. */
+  private holdingsLookupKey = computed(() => {
+    const f = this.form();
+    if (f.side !== 'SELL') return null;
+    const ticker = f.ticker.trim();
+    if (ticker.length < 1) return null;
+    if (!isValidIsoDate(f.trade_date)) return null;
+    return `${ticker}|${f.trade_date}`;
+  });
 
   /** Computed lookup key: only emits a non-null value when ticker is plausibly
    *  complete AND the date passes strict ISO validation. */
@@ -85,6 +107,17 @@ export class TradeFormComponent implements OnInit {
       }
       const [ticker, date] = key.split('|');
       this.priceLookup$.next({ ticker, date });
+    });
+
+    // Fetch how many shares are sellable whenever a SELL's ticker/date is valid.
+    effect(() => {
+      const key = this.holdingsLookupKey();
+      if (!key) {
+        this.held.set(null);
+        return;
+      }
+      const [ticker, date] = key.split('|');
+      this.holdingsLookup$.next({ ticker, date });
     });
   }
 
@@ -134,6 +167,16 @@ export class TradeFormComponent implements OnInit {
       if (result.currency) this.patch('currency', result.currency);
       if (!this.priceTouched()) this.patch('price', result.price);
     });
+
+    this.holdingsLookup$.pipe(
+      distinctUntilChanged((a, b) => a.ticker === b.ticker && a.date === b.date),
+      debounceTime(300),
+      // Catch INSIDE switchMap so one failed lookup doesn't kill the subscription.
+      // Editing a trade excludes itself so the baseline ignores this very SELL.
+      switchMap(({ ticker, date }) =>
+        this.api.getHoldings(ticker, date, this.initial()?.id).pipe(catchError(() => of(null))),
+      ),
+    ).subscribe(result => this.held.set(result ? result.shares_held : null));
   }
 
   patch<K extends keyof TradeInput>(key: K, value: TradeInput[K]): void {
@@ -187,6 +230,12 @@ export class TradeFormComponent implements OnInit {
     const f = this.form();
     if (!f.ticker || f.shares <= 0 || f.price < 0) {
       this.error.set('Vul ticker, aantal aandelen en prijs in.');
+      return;
+    }
+    // Client-side guard so the user rarely hits the backend's hard 400. When `held` is
+    // null (lookup pending/failed) sellExceedsHeld() is false and the backend decides.
+    if (this.sellExceedsHeld()) {
+      this.error.set(`Je bezit slechts ${formatShares(this.held()!)} aandelen van ${f.ticker}.`);
       return;
     }
     this.saving.set(true);

@@ -48,6 +48,14 @@
     <div class="col-md-2">
       <label class="form-label small">Aandelen</label>
       <app-decimal-input [value]="form().shares" (valueChange)="patch('shares', $event)" />
+      @if (form().side === 'SELL' && held() !== null) {
+        <div class="form-text small" [class.text-danger]="sellExceedsHeld()" [class.text-muted]="!sellExceedsHeld()">
+          @if (sellExceedsHeld()) {
+            <i class="bi bi-exclamation-triangle me-1"></i>
+          }
+          Je bezit {{ held() | shares }} aandelen
+        </div>
+      }
     </div>
 
     <div class="col-md-2">
@@ -96,7 +104,7 @@
   }
 
   <div class="d-flex gap-2 mt-3">
-    <button type="submit" class="btn btn-primary" [disabled]="saving()">
+    <button type="submit" class="btn btn-primary" [disabled]="saving() || sellExceedsHeld()">
       @if (saving()) { <span class="spinner-border spinner-border-sm me-2"></span> }
       {{ initial() ? 'Bijwerken' : 'Toevoegen' }}
     </button>

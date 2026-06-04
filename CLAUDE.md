@@ -88,6 +88,7 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `PUT    /api/trades/:id` — update
 - `DELETE /api/trades/:id` — delete
 - `GET    /api/positions` → `{ positions: PositionMetrics[], totals: PortfolioTotals }` (computes FIFO + fetches quotes)
+- `GET    /api/positions/holdings?ticker=&date=&excludeTradeId=` → `{ ticker, shares_held }` (DB-only, no quotes; powers the trade-form SELL check)
 - `GET    /api/positions/realized` — all realized FIFO lots (for tax/history)
 - `GET    /api/positions/history` — daily portfolio value time-series (uses Yahoo historical chart)
 - `GET    /api/prices/search?q=` — Yahoo ticker search (autocomplete)
@@ -109,7 +110,7 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `walkTrades(trades)` walks one ticker chronologically. BUYs push an `OpenLot` (with proportional buy-fee folded into cost_per_share). SELLs match against open lots in order; each match emits a `RealizedLot` with cost_basis and proceeds (sell-fee folded into proceeds_per_share).
 - `computeAllPositions()` runs walkTrades per ticker, fetches live quotes, converts to display currency, sorts (open positions first by market value desc, then closed by realized desc).
 - Mixed-currency tickers warn but use the first trade's currency.
-- Short positions (selling more than open) warn and are not modeled.
+- Short positions (selling more than open) are **hard-blocked** at write time, so they never reach the walker in practice. `walkTrades` still reports any uncovered SELL via `PositionState.oversold` (and warns); `findShareOverdraw(next, previous)` re-simulates the FIFO history for every affected ticker and returns the first that would go short. `sharesHeld(ticker, {asOf, excludeTradeId})` gives open shares for the holdings endpoint. See the share-overdraw guard under "Cash position".
 
 ### Currency conversion (fxService.ts)
 
@@ -128,6 +129,7 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
   - **Trades** — a trade change that lowers cash into the negative (a BUY, or **deleting a SELL** which removes its proceeds) triggers a *soft confirm*: `POST/PUT/DELETE /api/trades` returns `409 { code: 'CASH_OVERDRAW' }` unless the request carries `?confirm=1`. The trade-form/list catches the 409, asks the user (custom Bootstrap modal), and retries with `?confirm=1`. Adding a SELL or deleting a BUY (both raise cash) never trip it.
   - **Cash ledger** — a withdrawal (or shrinking/deleting a deposit) that would overdraw is *hard-blocked* with `400` on `POST/PUT/DELETE /api/cash`; no bypass. You can't withdraw cash you don't have.
   - Both reuse `overdraws()` + `projectCashAfter{Trade,CashTx}()` in cashService.ts, built on `tradeCashFlow()` / `cashTxFlow()`.
+- **Share overdraw (selling more than you own)** is separately *hard-blocked* with `400 { code: 'INSUFFICIENT_SHARES' }` on `POST/PUT/DELETE /api/trades`; no bypass (`?confirm=1` does not apply). The route calls `findShareOverdraw()` (positionsCalc.ts) before mutating: a new/edited SELL exceeding held shares, a back-dated SELL before its covering BUY, or editing/deleting a BUY that leaves later SELLs uncovered all trip it. The check is chronological (re-simulates the FIFO walk), independent of the cash guard, and runs first. The trade-form fetches `/api/positions/holdings` to show "Je bezit X aandelen" and disables submit before you hit the 400.
 - The positions route folds the summary into `PortfolioTotals` (`cash_balance`, `net_worth`, `cash_pct`, `invested_pct`) so the dashboard stays one API call.
 
 ### Stock price caching (marketData.ts + daily_prices)

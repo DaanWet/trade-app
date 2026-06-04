@@ -10,6 +10,7 @@ import {
 } from '../queries/trades';
 import { fetchQuote } from '../services/marketData';
 import { projectCashAfterTrade, cashShortfallMessage, type TradeCashFields } from '../services/cashService';
+import { findShareOverdraw, shareShortfallMessage, type TradeShareFields } from '../services/positionsCalc';
 import { errorMessage } from '../helpers/errors';
 
 const router = Router();
@@ -51,6 +52,31 @@ function tradeCashFields(input: z.infer<typeof tradeSchema>): TradeCashFields {
   return { ...input, fees: input.fees ?? 0 };
 }
 
+/** Map a validated trade payload to the fields the FIFO share projection needs. */
+function tradeShareFields(input: z.infer<typeof tradeSchema>): TradeShareFields {
+  return {
+    ticker: input.ticker,
+    trade_date: input.trade_date,
+    side: input.side,
+    shares: input.shares,
+    price: input.price,
+    currency: input.currency,
+    fees: input.fees ?? 0,
+  };
+}
+
+/**
+ * Build a 400 INSUFFICIENT_SHARES body when a trade change would close more shares
+ * than are held at some point in the (chronological) history; otherwise null. Unlike
+ * the cash overdraw this is a hard block — there is no `?confirm=1` bypass. `next` is
+ * null when deleting. Pure — the route decides how to respond.
+ */
+function insufficientSharesError(next: TradeShareFields | null, previous?: TradeRow | null) {
+  const overdraw = findShareOverdraw(next, previous);
+  if (!overdraw) return null;
+  return { code: 'INSUFFICIENT_SHARES', error: shareShortfallMessage(overdraw), ...overdraw };
+}
+
 router.get('/', (req, res) => {
   const ticker = typeof req.query.ticker === 'string' ? req.query.ticker : undefined;
   res.json(listTrades(ticker ? { ticker } : undefined));
@@ -68,6 +94,8 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid trade', issues: parsed.error.issues });
   }
   try {
+    const shortfall = insufficientSharesError(tradeShareFields(parsed.data), null);
+    if (shortfall) return res.status(400).json(shortfall);
     const overdraw = await cashOverdrawWarning(req.query.confirm === '1', tradeCashFields(parsed.data));
     if (overdraw) return res.status(409).json(overdraw);
     const trade = insertTrade(parsed.data);
@@ -88,6 +116,8 @@ router.put('/:id', async (req, res) => {
   try {
     const previous = getTrade(id);
     if (!previous) return res.status(404).json({ error: 'Not found' });
+    const shortfall = insufficientSharesError(tradeShareFields(parsed.data), previous);
+    if (shortfall) return res.status(400).json(shortfall);
     const overdraw = await cashOverdrawWarning(req.query.confirm === '1', tradeCashFields(parsed.data), previous);
     if (overdraw) return res.status(409).json(overdraw);
     const updated = updateTrade(id, parsed.data);
@@ -103,6 +133,9 @@ router.delete('/:id', async (req, res) => {
   try {
     const previous = getTrade(id);
     if (!previous) return res.status(404).json({ error: 'Not found' });
+    // Deleting a BUY removes its shares and can leave later SELLs uncovered → hard block.
+    const shortfall = insufficientSharesError(null, previous);
+    if (shortfall) return res.status(400).json(shortfall);
     // Deleting a SELL removes its proceeds and can drive cash negative → soft confirm.
     const overdraw = await cashOverdrawWarning(req.query.confirm === '1', null, previous);
     if (overdraw) return res.status(409).json(overdraw);

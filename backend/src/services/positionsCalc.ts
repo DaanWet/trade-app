@@ -71,6 +71,8 @@ interface PositionState {
   realized: RealizedLot[];
   total_buys: number;
   total_sells: number;
+  /** Shares sold beyond the open lots at some point in the walk (a short). 0 when clean. */
+  oversold: number;
 }
 
 /**
@@ -90,6 +92,7 @@ export function walkTrades(trades: TradeRow[]): PositionState {
   const realized: RealizedLot[] = [];
   let totalBuys = 0;
   let totalSells = 0;
+  let oversold = 0;
 
   for (const t of trades) {
     if (t.currency !== currency) {
@@ -137,11 +140,117 @@ export function walkTrades(trades: TradeRow[]): PositionState {
     }
 
     if (sharesToClose > 1e-9) {
+      oversold += sharesToClose;
       console.warn(`[positions] ${ticker} sold ${t.shares} on ${t.trade_date} but only ${t.shares - sharesToClose} were covered by open lots. Short positions are not modeled.`);
     }
   }
 
-  return { ticker, currency, open_lots: openLots, realized, total_buys: totalBuys, total_sells: totalSells };
+  return { ticker, currency, open_lots: openLots, realized, total_buys: totalBuys, total_sells: totalSells, oversold };
+}
+
+/** Below this many shares a short is just floating-point dust, not a real overdraw. */
+const SHARE_EPSILON = 1e-9;
+
+/** The fields the FIFO walk needs from a not-yet-persisted (incoming) trade. */
+export type TradeShareFields = Pick<
+  TradeRow,
+  'ticker' | 'trade_date' | 'side' | 'shares' | 'price' | 'currency' | 'fees'
+>;
+
+/** Total open shares left after a walk. */
+function openSharesOf(state: PositionState): number {
+  return state.open_lots.reduce((sum, lot) => sum + lot.shares_remaining, 0);
+}
+
+/** Order a trade list exactly like the DB does (trade_date ASC, id ASC). */
+function sortChronologically(trades: TradeRow[]): TradeRow[] {
+  return [...trades].sort((a, b) =>
+    a.trade_date < b.trade_date ? -1 : a.trade_date > b.trade_date ? 1 : a.id - b.id,
+  );
+}
+
+/** Materialize an incoming trade as a TradeRow so it can join the FIFO walk. */
+function syntheticTradeRow(fields: TradeShareFields, id: number): TradeRow {
+  return {
+    id,
+    ticker: fields.ticker,
+    trade_date: fields.trade_date,
+    side: fields.side,
+    shares: fields.shares,
+    price: fields.price,
+    currency: fields.currency,
+    fees: fields.fees,
+    notes: null,
+    created_at: '',
+  };
+}
+
+/**
+ * Open shares held for a ticker as of `asOf` (inclusive), optionally excluding one
+ * trade id (so the trade-form can show availability while editing that very trade).
+ * Reads trades from SQLite only — no live quotes.
+ */
+export function sharesHeld(
+  ticker: string,
+  opts?: { asOf?: string; excludeTradeId?: number },
+): number {
+  let trades = listTrades({ ticker });
+  if (opts?.excludeTradeId != null) trades = trades.filter((t) => t.id !== opts.excludeTradeId);
+  if (opts?.asOf) trades = trades.filter((t) => t.trade_date <= opts.asOf!);
+  if (trades.length === 0) return 0;
+  return openSharesOf(walkTrades(trades));
+}
+
+/**
+ * Re-simulate FIFO for every ticker a trade change touches and return the first one
+ * whose history would go short — a SELL closing more shares than were open at that
+ * point in time (the walk is chronological, so a back-dated SELL counts too). Returns
+ * null when every affected ticker stays covered.
+ *
+ * `next` is the new/edited row (null when deleting); `previous` is the existing row
+ * being replaced or removed. Mirrors projectCashAfterTrade's (next, previous) shape.
+ */
+export function findShareOverdraw(
+  next: TradeShareFields | null,
+  previous?: TradeRow | null,
+): { ticker: string; shares_held: number; oversold: number } | null {
+  const tickers = new Set<string>();
+  if (next) tickers.add(next.ticker);
+  if (previous) tickers.add(previous.ticker);
+
+  for (const ticker of tickers) {
+    const replacesHere = !!previous && previous.ticker === ticker;
+    // Holdings as they stand without the change (listTrades is already sorted, and a
+    // filter preserves that order). Back out the previous version of the edited/deleted row.
+    let base = listTrades({ ticker });
+    if (replacesHere) base = base.filter((t) => t.id !== previous!.id);
+
+    // The same history with the new/edited row applied. Reuse previous.id on an edit so
+    // it keeps its slot; a fresh insert sorts last on its date (highest id).
+    const projected =
+      next && next.ticker === ticker
+        ? sortChronologically([
+            ...base,
+            syntheticTradeRow(next, replacesHere ? previous!.id : Number.MAX_SAFE_INTEGER),
+          ])
+        : base;
+
+    const oversold = projected.length ? walkTrades(projected).oversold : 0;
+    if (oversold > SHARE_EPSILON) {
+      // shares_held is what you actually hold, ignoring the rejected change.
+      return { ticker, shares_held: base.length ? openSharesOf(walkTrades(base)) : 0, oversold };
+    }
+  }
+  return null;
+}
+
+/** User-facing (nl-BE) message for a blocked share overdraw, shared by the route. */
+export function shareShortfallMessage(o: {
+  ticker: string;
+  shares_held: number;
+  oversold: number;
+}): string {
+  return `Onvoldoende aandelen: je bezit er ${o.shares_held} van ${o.ticker}, dit zou je ${o.oversold} aandelen short zetten.`;
 }
 
 /**
@@ -187,7 +296,7 @@ async function metricsFromState(
   quote: TickerRow | null,
   displayCurrency: string,
 ): Promise<PositionMetrics> {
-  const sharesOpen = state.open_lots.reduce((s, l) => s + l.shares_remaining, 0);
+  const sharesOpen = openSharesOf(state);
   const costBasis = state.open_lots.reduce((s, l) => s + l.shares_remaining * l.cost_per_share, 0);
   const avgCost = sharesOpen > 0 ? costBasis / sharesOpen : 0;
   const currentPrice = quote?.last_price ?? null;

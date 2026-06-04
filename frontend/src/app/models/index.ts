@@ -101,6 +101,12 @@ export interface PositionsResponse {
   totals: PortfolioTotals;
 }
 
+/** Open shares held for a ticker (GET /api/positions/holdings). */
+export interface Holdings {
+  ticker: string;
+  shares_held: number;
+}
+
 export interface RealizedLot {
   ticker: string;
   buy_date: string;
