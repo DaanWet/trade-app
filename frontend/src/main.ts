@@ -9,9 +9,18 @@ import { AppComponent } from './app/app.component';
 // browserTracingIntegration adds pageload/navigation + fetch spans; tracePropagationTargets
 // stitches those fetches into the same trace as the backend (same-origin loopback).
 Sentry.init({
-  integrations: [Sentry.browserTracingIntegration()],
+  integrations: [
+    Sentry.browserTracingIntegration(),
+    // Session Replay. Default privacy: all text → ***, media blocked, before it leaves
+    // the machine (fits the "scrub" choice for a financial app).
+    Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
+  ],
   tracesSampleRate: 1.0,
   tracePropagationTargets: [/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//],
+  // Buffer a replay in memory and only upload it when an error occurs — so the free-tier
+  // 50/month quota is spent solely on sessions that actually broke (rare for one user).
+  replaysSessionSampleRate: 0,
+  replaysOnErrorSampleRate: 1.0,
 });
 
 bootstrapApplication(AppComponent, appConfig).catch((err) => {
