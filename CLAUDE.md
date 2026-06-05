@@ -18,10 +18,10 @@
 ```
 backend/src/
   index.ts          — standalone dev server: imports app, app.listen(PORT=3100)
-  app.ts            — builds Express app: mounts 6 routers, CORS, static SPA (prod), error handler; exports `app` (so Electron can run it in-process)
+  app.ts            — builds Express app: mounts 7 routers, CORS, static SPA (prod), error handler (→ central logger); exports `app` + `setRemoteSink` (so Electron can run it in-process + inject a Sentry sink)
   db.ts             — SQLite singleton, WAL-mode, foreign keys ON
   schema.ts         — DB schema + migrations (idempotent, version-tracked)
-  routes/           — trades, positions, prices, tax, settings, cash
+  routes/           — trades, positions, prices, tax, settings, cash, diagnostics
   queries/          — trades.ts, prices.ts, cash.ts (better-sqlite3 statements)
   services/
     yahooClient.ts       — single shared yahoo-finance2 v3 instance (used by yahoo* providers)
@@ -41,6 +41,7 @@ backend/src/
     constants.ts    — SETTING_KEYS, TRADE_SIDES, CASH_TX_TYPES, PRICE_CACHE_TTL_SECONDS
     errors.ts       — errorMessage(), HttpError class
     settings.ts     — getSetting(), upsertSetting(), getAllSettings()
+    logger.ts       — central logger: console + rotating file (${LOG_DIR}/app.log) + in-memory ring buffer + pluggable remote sink (setRemoteSink); getRecentEvents()/getLogFilePath()
 
 frontend/src/app/
   app.component.{ts,html,scss}  — root layout with Bootstrap navbar
@@ -64,7 +65,8 @@ frontend/src/app/
     settings/     — display currency selector
 
 electron/
-  main.ts           — Electron main: in prod require()s backend/dist/app.js, runs Express in-process on random 127.0.0.1 port, loads built Angular SPA; auto-update via electron-updater
+  main.ts           — Electron main: in prod require()s backend/dist/app.js, runs Express in-process on random 127.0.0.1 port, loads built Angular SPA; auto-update via electron-updater. Inits Sentry + sets LOG_DIR/APP_VERSION env before requiring backend; injects the Sentry sink into the backend logger after require.
+  sentry.ts         — @sentry/electron/main init + PII/financial scrubbing (beforeSend/beforeSendLog) + the sink the backend logger fans out to. DSN-gated (DEFAULT_DSN const / SENTRY_DSN env).
   preload.ts        — preload bridge
 package.json (root) — build/dist scripts + electron-builder config (asarUnpack better-sqlite3)
 ```
@@ -102,6 +104,7 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `GET    /api/cash` → `{ transactions: CashTxRow[], summary: CashSummary }`
 - `POST   /api/cash` — create deposit/withdrawal (zod-validated)
 - `PUT    /api/cash/:id`, `DELETE /api/cash/:id`
+- `GET    /api/diagnostics` → `{ appVersion, now, logFilePath, counters, settings, recentEvents }` — recent backend log events + scrubbed metadata (local-only, 127.0.0.1)
 
 ## Core domain logic
 
@@ -150,6 +153,15 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - Per-lot components (cost basis, proceeds, fotomoment value) are converted to display currency on the **sell date**.
 - `/api/tax/lots` returns each lot enriched with `taxable_pnl_display`, `fotomoment_value_display`, and `basis_used`.
 - Years before `appliesFrom` show `applies: false`, `tax_due: 0` (sold pre-2026 → informational economic P&L only).
+
+### Observability & diagnostics (logger.ts + Sentry)
+
+- **Central logger** (`helpers/logger.ts`) is the single choke point. Every `logger.{debug,info,warn,error}(component, msg)` fans out to: (1) the console (unchanged `[component] message` lines), (2) a size-rotated file at `${LOG_DIR}/app.log` (2 MB × 3 files; env `LOG_DIR`, dev fallback `backend/logs/`, prod `${userData}/logs/`), (3) an in-memory ring buffer (last 500 events, mirrors `rateLimitMonitor.ts`), (4) a pluggable remote sink. Logging is best-effort — file/sink errors are swallowed so it can never crash a request. `LOG_DIR` is resolved fresh per write.
+- All previously-swallowed provider/FX warnings (`yahooPrice`, `yahooFx`, `frankfurter`, `fx`), the FIFO/tax warnings, the startup banners (`db`, `schema`, `server`, `history`), and the global error handler now route through the logger — so a packaged build leaves a retrievable trace where before there was none.
+- **`GET /api/diagnostics`** serves the ring buffer + app version + whitelisted settings (`SAFE_SETTING_KEYS`) + log-file path + counters (`convertFailures`, `rateLimited`). Local-only (127.0.0.1, single-user) → intentionally **not** scrubbed.
+- **Remote = Sentry** (`@sentry/electron`, OpenTelemetry-based v10 SDK under the hood). The backend never imports Electron/Sentry: `electron/main.ts` calls `Sentry.init` (before the backend `require`, so require-time throws are caught) then injects a sink via the re-exported `setRemoteSink`. The sink maps warn/info/debug → breadcrumbs and `error` → `captureException`/`captureMessage`. Renderer errors are caught by a minimal `@sentry/electron/renderer` init in `frontend/src/main.ts` (inherits DSN/config from main over IPC).
+- **Privacy = cloud + scrub**: `sendDefaultPii:false` + `beforeSend`/`beforeSendLog` drop request bodies/query strings and redact paths/amounts/numbers/tickers (`scrubText` in `electron/sentry.ts`). The local file + `/api/diagnostics` stay unscrubbed by design.
+- **DSN config**: Sentry is **DSN-gated** — set `SENTRY_DSN` (env, dev) or paste the public DSN into `DEFAULT_DSN` in `electron/sentry.ts` (for packaged builds; the DSN is a public ingest key, safe to ship). With no DSN, Sentry is skipped and only the local file + `/api/diagnostics` fallback runs (dev/tests stay clean). Future option (documented, not wired): swap the SDK transport for Sentry's direct OTLP endpoints (`…/integration/otlp/v1/{traces,logs}`).
 
 ## Locale & formatting
 

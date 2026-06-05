@@ -6,6 +6,7 @@ import {
   type FxRateRow,
 } from '../queries/prices';
 import { fxProvider } from './providers';
+import { logger } from '../helpers/logger';
 
 /**
  * FX service — reads cached rates first, asks the configured FxProvider only on misses.
@@ -38,7 +39,7 @@ export async function getRate(base: string, quote: string, date: string = todayI
 
   const fallback = getMostRecentFxRate(b, q);
   if (fallback) {
-    console.warn(`[fx] Stale fallback rate for ${b}/${q}: ${fallback.rate} from ${fallback.rate_date}`);
+    logger.warn('fx', `Stale fallback rate for ${b}/${q}: ${fallback.rate} from ${fallback.rate_date}`);
     return fallback.rate;
   }
 
@@ -54,6 +55,8 @@ export async function convert(amount: number, from: string, to: string, date?: s
     return amount * rate;
   } catch {
     _convertFailures++;
+    // Leave a breadcrumb without warn-spam: convert() is intentionally non-throwing.
+    logger.debug('fx', `convert ${from}->${to} failed, returning unconverted amount`);
     return amount;
   }
 }
@@ -115,7 +118,7 @@ function forwardFillRates(base: string, quote: string, from: Date, to: Date): vo
     if (fallback) {
       lastRate = fallback.rate;
     } else {
-      console.warn(`[fx] No rate available for ${base}/${quote}; defaulting to 1.0 for [${fromIso}, ${toIso}]`);
+      logger.warn('fx', `No rate available for ${base}/${quote}; defaulting to 1.0 for [${fromIso}, ${toIso}]`);
       lastRate = 1.0;
     }
   }

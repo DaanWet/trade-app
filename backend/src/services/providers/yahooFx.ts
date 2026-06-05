@@ -1,5 +1,7 @@
 import { yahoo } from '../yahooClient';
 import { isRateLimitError, markLimited, markRecovered } from '../rateLimitMonitor';
+import { logger } from '../../helpers/logger';
+import { errorMessage } from '../../helpers/errors';
 import type { FxProvider, FxRangePoint } from './types';
 
 /**
@@ -36,7 +38,7 @@ export const yahooFxProvider: FxProvider = {
       return (pick.close as number) ?? null;
     } catch (err) {
       if (isRateLimitError(err)) markLimited('yahoo');
-      console.warn(`[yahooFx] fetchRate ${symbol}@${date} failed:`, err instanceof Error ? err.message : err);
+      logger.warn('yahooFx', `fetchRate ${symbol}@${date} failed: ${errorMessage(err)}`);
       return null;
     }
   },
@@ -58,7 +60,7 @@ export const yahooFxProvider: FxProvider = {
       return points;
     } catch (err) {
       if (isRateLimitError(err)) markLimited('yahoo');
-      console.warn(`[yahooFx] fetchRange ${symbol} failed:`, err instanceof Error ? err.message : err);
+      logger.warn('yahooFx', `fetchRange ${symbol} failed: ${errorMessage(err)}`);
       return [];
     }
   },

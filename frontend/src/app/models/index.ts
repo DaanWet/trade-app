@@ -169,6 +169,30 @@ export interface TaxReport {
   years: TaxYearReport[];
 }
 
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+/** One entry from the backend's in-memory log ring buffer (GET /api/diagnostics). */
+export interface DiagnosticsEvent {
+  ts: string;
+  level: LogLevel;
+  component: string;
+  message: string;
+  errorName?: string;
+}
+
+/** GET /api/diagnostics — recent backend events + scrubbed metadata (local-only). */
+export interface DiagnosticsResponse {
+  appVersion: string;
+  now: string;
+  logFilePath: string;
+  counters: {
+    convertFailures: number;
+    rateLimited: string[];
+  };
+  settings: Record<string, string>;
+  recentEvents: DiagnosticsEvent[];
+}
+
 /** Which cost basis produced a lot's taxable result. */
 export type TaxBasis = 'none' | 'purchase' | 'fotomoment' | 'shielded';
 

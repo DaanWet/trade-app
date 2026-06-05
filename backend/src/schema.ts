@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3';
+import { logger } from './helpers/logger';
 
 /**
  * Schema migrations - idempotent, run on every startup.
@@ -102,5 +103,5 @@ export function runMigrations(db: Database): void {
     db.prepare(`INSERT INTO schema_version (version) VALUES (?)`).run(3);
   }
 
-  console.log(`[schema] At version ${SCHEMA_VERSION}`);
+  logger.info('schema', `At version ${SCHEMA_VERSION}`);
 }

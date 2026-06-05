@@ -3,6 +3,7 @@ import { fetchQuotes } from './marketData';
 import { convert } from './fxService';
 import { getSetting } from '../helpers/settings';
 import { SETTING_KEYS } from '../helpers/constants';
+import { logger } from '../helpers/logger';
 import type { TickerRow } from '../queries/prices';
 
 /** A position counts as open above this many shares (ignores floating-point dust). */
@@ -96,7 +97,7 @@ export function walkTrades(trades: TradeRow[]): PositionState {
 
   for (const t of trades) {
     if (t.currency !== currency) {
-      console.warn(`[positions] ${ticker} has mixed currencies (${currency} vs ${t.currency}); using first.`);
+      logger.warn('positions', `${ticker} has mixed currencies (${currency} vs ${t.currency}); using first.`);
     }
 
     if (t.side === 'BUY') {
@@ -141,7 +142,7 @@ export function walkTrades(trades: TradeRow[]): PositionState {
 
     if (sharesToClose > 1e-9) {
       oversold += sharesToClose;
-      console.warn(`[positions] ${ticker} sold ${t.shares} on ${t.trade_date} but only ${t.shares - sharesToClose} were covered by open lots. Short positions are not modeled.`);
+      logger.warn('positions', `${ticker} sold ${t.shares} on ${t.trade_date} but only ${t.shares - sharesToClose} were covered by open lots. Short positions are not modeled.`);
     }
   }
 

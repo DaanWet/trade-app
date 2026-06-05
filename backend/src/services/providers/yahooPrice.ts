@@ -1,5 +1,7 @@
 import { yahoo } from '../yahooClient';
 import { isRateLimitError, markLimited, markRecovered } from '../rateLimitMonitor';
+import { logger } from '../../helpers/logger';
+import { errorMessage } from '../../helpers/errors';
 import type {
   PriceProvider,
   PriceQuote,
@@ -33,7 +35,7 @@ export const yahooPriceProvider: PriceProvider = {
       return result;
     } catch (err) {
       if (isRateLimitError(err)) markLimited('yahoo');
-      console.warn(`[yahooPrice] fetchQuote(${sym}) failed:`, err instanceof Error ? err.message : err);
+      logger.warn('yahooPrice', `fetchQuote(${sym}) failed: ${errorMessage(err)}`);
       return null;
     }
   },
@@ -52,7 +54,7 @@ export const yahooPriceProvider: PriceProvider = {
       return out;
     } catch (err) {
       if (isRateLimitError(err)) markLimited('yahoo');
-      console.warn(`[yahooPrice] fetchHistorical(${sym}) failed:`, err instanceof Error ? err.message : err);
+      logger.warn('yahooPrice', `fetchHistorical(${sym}) failed: ${errorMessage(err)}`);
       return [];
     }
   },
@@ -76,7 +78,7 @@ export const yahooPriceProvider: PriceProvider = {
       return out;
     } catch (err) {
       if (isRateLimitError(err)) markLimited('yahoo');
-      console.warn(`[yahooPrice] search(${query}) failed:`, err instanceof Error ? err.message : err);
+      logger.warn('yahooPrice', `search(${query}) failed: ${errorMessage(err)}`);
       return [];
     }
   },

@@ -101,6 +101,33 @@ jobs:
       - name: Build (frontend + backend + electron)
         run: npm run build
 
+      # Create the Sentry release + upload source maps so minified stack traces
+      # symbolicate to real source. `inject` stamps debug IDs into the bundles AND their
+      # maps (URL-independent matching — needed because the Electron renderer loads from a
+      # random 127.0.0.1 port). Runs per-platform; uploads dedupe by debug ID. Wrapped in
+      # continue-on-error so a Sentry hiccup never blocks the actual app release.
+      - name: Sentry release & source maps
+        if: github.event_name == 'push'
+        continue-on-error: true
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: dwsoftware
+          SENTRY_PROJECT: trade-app   # ← verify this matches your Sentry project slug
+          SENTRY_RELEASE: trade-app@${{ needs.check.outputs.version }}
+        run: |
+          npx @sentry/cli sourcemaps inject frontend/dist/frontend/browser backend/dist electron/dist
+          npx @sentry/cli releases new "$SENTRY_RELEASE"
+          npx @sentry/cli sourcemaps upload --release "$SENTRY_RELEASE" frontend/dist/frontend/browser backend/dist electron/dist
+          npx @sentry/cli releases set-commits "$SENTRY_RELEASE" --auto
+          npx @sentry/cli releases finalize "$SENTRY_RELEASE"
+
+      # The maps were uploaded to Sentry; don't ship them inside the installer.
+      - name: Strip source maps before packaging
+        if: github.event_name == 'push'
+        shell: bash
+        run: find frontend/dist backend/dist electron/dist -name "*.map" -type f -delete
+
       - name: Package & publish
         # push (new version) → publish to the GitHub Release for v<version>.
         # workflow_dispatch → just build, artifacts uploaded by next step.

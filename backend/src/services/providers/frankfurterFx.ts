@@ -1,4 +1,6 @@
 import { isRateLimitError, markLimited, markRecovered } from '../rateLimitMonitor';
+import { logger } from '../../helpers/logger';
+import { errorMessage } from '../../helpers/errors';
 import type { FxProvider, FxRangePoint } from './types';
 
 /**
@@ -54,7 +56,7 @@ export const frankfurterProvider: FxProvider = {
       return data.rates?.[q] ?? null;
     } catch (err) {
       if (isRateLimitError(err)) markLimited('frankfurter');
-      console.warn(`[frankfurter] fetchRate ${b}/${q}@${date} failed:`, err instanceof Error ? err.message : err);
+      logger.warn('frankfurter', `fetchRate ${b}/${q}@${date} failed: ${errorMessage(err)}`);
       return null;
     }
   },
@@ -77,7 +79,7 @@ export const frankfurterProvider: FxProvider = {
       return points;
     } catch (err) {
       if (isRateLimitError(err)) markLimited('frankfurter');
-      console.warn(`[frankfurter] fetchRange ${b}/${q} failed:`, err instanceof Error ? err.message : err);
+      logger.warn('frankfurter', `fetchRange ${b}/${q} failed: ${errorMessage(err)}`);
       return [];
     }
   },

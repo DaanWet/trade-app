@@ -3,6 +3,7 @@ import { convert } from './fxService';
 import { priceAt } from './marketData';
 import { getSetting } from '../helpers/settings';
 import { SETTING_KEYS } from '../helpers/constants';
+import { logger } from '../helpers/logger';
 
 /**
  * Belgian capital gains tax ("meerwaardebelasting") — applied to realized gains
@@ -104,8 +105,9 @@ async function fetchFotomomentCloses(
     [...tickers].map(async (t) => {
       const r = await priceAt(t, params.fotomomentDate);
       if (!r) {
-        console.warn(
-          `[tax] No fotomoment price for ${t} on ${params.fotomomentDate}; falling back to purchase basis.`,
+        logger.warn(
+          'tax',
+          `No fotomoment price for ${t} on ${params.fotomomentDate}; falling back to purchase basis.`,
         );
         out.set(t, null);
       } else {

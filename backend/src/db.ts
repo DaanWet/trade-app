@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { runMigrations } from './schema';
+import { logger } from './helpers/logger';
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'trades.db');
 
@@ -17,4 +18,4 @@ db.pragma('foreign_keys = ON');
 
 runMigrations(db);
 
-console.log(`[db] Connected to ${DB_PATH}`);
+logger.info('db', `Connected to ${DB_PATH}`);

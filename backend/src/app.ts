@@ -10,7 +10,9 @@ import pricesRouter from './routes/prices';
 import taxRouter from './routes/tax';
 import settingsRouter from './routes/settings';
 import cashRouter from './routes/cash';
+import diagnosticsRouter from './routes/diagnostics';
 import { getActiveLimited } from './services/rateLimitMonitor';
+import { logger } from './helpers/logger';
 
 const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? 'http://localhost:4200,http://localhost:4222,http://localhost:33793')
   .split(',')
@@ -57,6 +59,7 @@ app.use('/api/prices', pricesRouter);
 app.use('/api/tax', taxRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/cash', cashRouter);
+app.use('/api/diagnostics', diagnosticsRouter);
 
 if (STATIC_DIR) {
   app.use(express.static(STATIC_DIR));
@@ -68,8 +71,13 @@ if (STATIC_DIR) {
 }
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('[error]', err);
+  // logger.error routes to file + ring buffer + remote sink (Sentry captureException in prod).
+  logger.error('error', err.message, err);
   res.status(500).json({ error: err.message });
 });
 
 export { CORS_ORIGINS };
+// Re-exported so the Electron main process can inject a Sentry-backed sink after Sentry.init
+// without the backend ever importing Electron/Sentry (keeps bare-node dev/tests clean).
+export { setRemoteSink, logger } from './helpers/logger';
+export type { RecentEvent, LogLevel, RemoteSink } from './helpers/logger';

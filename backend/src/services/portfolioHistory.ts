@@ -3,6 +3,7 @@ import { fetchHistorical } from './marketData';
 import { convert, warmHistoricalRates } from './fxService';
 import { getSetting } from '../helpers/settings';
 import { SETTING_KEYS } from '../helpers/constants';
+import { logger } from '../helpers/logger';
 
 export interface PortfolioPoint {
   date: string;
@@ -57,7 +58,7 @@ export async function buildPortfolioHistory(): Promise<PortfolioPoint[]> {
       histories.set(t, new Map(prices.map(p => [p.date, p.close])));
     }),
   ]);
-  console.log(`[history] data fetched in ${Date.now() - t0}ms`);
+  logger.info('history', `data fetched in ${Date.now() - t0}ms`);
 
   // Walk every calendar day, accumulate shares and value.
   const tradesByDate = new Map<string, typeof trades>();
@@ -111,6 +112,6 @@ export async function buildPortfolioHistory(): Promise<PortfolioPoint[]> {
     cursor.setDate(cursor.getDate() + 1);
   }
 
-  console.log(`[history] built ${out.length} points in ${Date.now() - t0}ms total`);
+  logger.info('history', `built ${out.length} points in ${Date.now() - t0}ms total`);
   return out;
 }

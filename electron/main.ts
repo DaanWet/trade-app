@@ -5,6 +5,14 @@ import fs from 'fs';
 import Module from 'module';
 import type { AddressInfo } from 'net';
 import type { Server } from 'http';
+import { initSentry, sentrySink, type BackendLogEvent } from './sentry';
+
+// Init Sentry first so a throw during the backend require (below) is still captured.
+// DSN-gated: with no SENTRY_DSN this is a no-op and the backend stays fully local.
+const sentryEnabled = initSentry({
+  release: `trade-app@${app.getVersion()}`,
+  environment: app.isPackaged ? 'production' : 'development',
+});
 
 const isPackaged = app.isPackaged;
 
@@ -36,6 +44,10 @@ const dbPath = path.join(dataDir, 'trades.db');
 // Inject env BEFORE requiring backend so its top-level reads pick them up.
 process.env.DB_PATH = dbPath;
 process.env.STATIC_DIR = frontendDir;
+// Persistent logs next to the DB in userData, so they survive restarts and updates.
+process.env.LOG_DIR = path.join(userData, 'logs');
+// Surface the app version on GET /api/diagnostics (and in log lines).
+process.env.APP_VERSION = app.getVersion();
 // Same-origin in Electron, but keep CORS permissive for any electron:// quirks.
 process.env.CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost';
 
@@ -44,7 +56,15 @@ let mainWindow: BrowserWindow | null = null;
 
 async function startBackend(): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { app: expressApp } = require(backendAppPath) as { app: import('express').Express };
+  const backend = require(backendAppPath) as {
+    app: import('express').Express;
+    setRemoteSink: (fn: ((ev: BackendLogEvent, err?: unknown) => void) | null) => void;
+  };
+  const expressApp = backend.app;
+
+  // Route the backend logger's events to Sentry (breadcrumbs + error capture). Injected
+  // here so the backend never imports Electron/Sentry; skipped entirely when DSN is absent.
+  if (sentryEnabled) backend.setRemoteSink(sentrySink);
 
   return new Promise<number>((resolve, reject) => {
     server = expressApp.listen(0, '127.0.0.1', () => {
