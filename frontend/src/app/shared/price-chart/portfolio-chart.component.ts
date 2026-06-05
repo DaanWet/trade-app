@@ -11,6 +11,7 @@ import {
   Chart,
   ChartConfiguration,
   Filler,
+  Legend,
   LineController,
   LineElement,
   LinearScale,
@@ -22,7 +23,16 @@ import 'chartjs-adapter-date-fns';
 import { nlBE } from 'date-fns/locale';
 import type { PortfolioPoint } from '../../models';
 
-Chart.register(LineController, LineElement, LinearScale, PointElement, TimeScale, Tooltip, Filler);
+Chart.register(
+  LineController,
+  LineElement,
+  LinearScale,
+  PointElement,
+  TimeScale,
+  Tooltip,
+  Filler,
+  Legend,
+);
 
 @Component({
   selector: 'app-portfolio-chart',
@@ -52,10 +62,18 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
   }
 
   private render(points: PortfolioPoint[]): void {
+    const labels = points.map(p => p.date);
+    const total = points.map(p => p.total);
+    const stocks = points.map(p => p.market_value);
+    const deposits = points.map(p => p.net_deposits);
+    const unit = this.timeUnit(points);
+
     if (this.chart) {
-      this.chart.data.labels = points.map(p => p.date);
-      this.chart.data.datasets[0].data = points.map(p => p.market_value);
-      this.chart.data.datasets[1].data = points.map(p => p.invested);
+      this.chart.data.labels = labels;
+      this.chart.data.datasets[0].data = total;
+      this.chart.data.datasets[1].data = stocks;
+      this.chart.data.datasets[2].data = deposits;
+      (this.chart.options.scales!['x'] as { time: { unit: string } }).time.unit = unit;
       this.chart.update();
       return;
     }
@@ -65,11 +83,11 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
     const config: ChartConfiguration<'line'> = {
       type: 'line',
       data: {
-        labels: points.map(p => p.date),
+        labels,
         datasets: [
           {
-            label: 'Marktwaarde',
-            data: points.map(p => p.market_value),
+            label: 'Totaal',
+            data: total,
             borderColor: '#58a6ff',
             backgroundColor: 'rgba(88, 166, 255, 0.15)',
             fill: true,
@@ -78,8 +96,17 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
             borderWidth: 2,
           },
           {
-            label: 'Geïnvesteerd (cost basis)',
-            data: points.map(p => p.invested),
+            label: 'Aandelen',
+            data: stocks,
+            borderColor: '#3fb950',
+            fill: false,
+            tension: 0.2,
+            pointRadius: 0,
+            borderWidth: 1.5,
+          },
+          {
+            label: 'Netto stortingen',
+            data: deposits,
             borderColor: '#8b949e',
             borderDash: [4, 4],
             fill: false,
@@ -97,7 +124,7 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
           x: {
             type: 'time',
             time: {
-              unit: 'month',
+              unit,
               // Use 24h time and Belgian-style date tokens. date-fns format strings:
               //   HH = 24h hours, mm = minutes, dd = day, MMM = short month, yyyy = 4-digit year.
               tooltipFormat: 'dd MMM yyyy HH:mm',
@@ -124,6 +151,12 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
           },
         },
         plugins: {
+          // Click a legend entry to hide/show that line — the chart's "filter" controls.
+          legend: {
+            display: true,
+            position: 'top',
+            labels: { color: '#c9d1d9', usePointStyle: true, boxWidth: 12 },
+          },
           tooltip: {
             callbacks: {
               label: (ctx) => `${ctx.dataset.label}: ${this.formatMoney(ctx.parsed.y ?? 0, 2)}`,
@@ -133,6 +166,17 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
       },
     };
     this.chart = new Chart(ctx, config);
+  }
+
+  /** Pick an x-axis tick granularity that suits the visible date span. */
+  private timeUnit(points: PortfolioPoint[]): 'day' | 'week' | 'month' {
+    if (points.length < 2) return 'day';
+    const spanDays =
+      (new Date(points[points.length - 1].date).getTime() - new Date(points[0].date).getTime()) /
+      86_400_000;
+    if (spanDays <= 31) return 'day';
+    if (spanDays <= 180) return 'week';
+    return 'month';
   }
 
   private formatMoney(value: number, fractionDigits: number): string {

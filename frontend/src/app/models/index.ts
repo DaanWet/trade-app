@@ -120,9 +120,10 @@ export interface RealizedLot {
 
 export interface PortfolioPoint {
   date: string;
-  market_value: number;
-  invested: number;
-  pnl: number;
+  market_value: number; // stocks only
+  cash: number; // cash balance that day
+  total: number; // market_value + cash
+  net_deposits: number; // cumulative net deposits
 }
 
 export interface TickerSearchResult {

@@ -99,7 +99,42 @@
     } @else if (history().length === 0) {
       <div class="text-muted small">Geen geschiedenis beschikbaar.</div>
     } @else {
-      <app-portfolio-chart [data]="history()" [currency]="d.totals.display_currency" />
+      <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+        <div class="btn-group btn-group-sm" role="group" aria-label="Tijdsbereik">
+          @for (r of ranges; track r.key) {
+            <button
+              type="button"
+              class="btn btn-outline-secondary"
+              [class.active]="range() === r.key"
+              (click)="range.set(r.key)"
+            >
+              {{ r.label }}
+            </button>
+          }
+        </div>
+        @if (range() === 'CUSTOM') {
+          <input
+            type="date"
+            class="form-control form-control-sm"
+            style="width: auto;"
+            [value]="customFrom()"
+            (change)="customFrom.set($any($event.target).value)"
+          />
+          <span class="text-muted small">tot</span>
+          <input
+            type="date"
+            class="form-control form-control-sm"
+            style="width: auto;"
+            [value]="customTo()"
+            (change)="customTo.set($any($event.target).value)"
+          />
+        }
+      </div>
+      @if (visibleHistory().length === 0) {
+        <div class="text-muted small">Geen data in dit bereik.</div>
+      } @else {
+        <app-portfolio-chart [data]="visibleHistory()" [currency]="d.totals.display_currency" />
+      }
     }
   </div>
 
