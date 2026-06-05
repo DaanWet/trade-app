@@ -31,31 +31,8 @@ export class PositionsTableComponent {
     return [...open, ...closed];
   });
 
-  /** Sorteerwaarde per kolom-key. */
+  /** Sorteerwaarde per kolom-key — elke sorteerbare kolom is een PositionMetrics-veld. */
   private posValue(p: PositionMetrics, key: string): string | number | null {
-    switch (key) {
-      case 'ticker':
-        return p.ticker;
-      case 'shares_open':
-        return p.shares_open;
-      case 'avg_cost':
-        return p.avg_cost;
-      case 'current_price':
-        return p.current_price;
-      case 'market_value_display':
-        return p.market_value_display;
-      case 'cost_basis_display':
-        return p.cost_basis_display;
-      case 'unrealized_pnl_display':
-        return p.unrealized_pnl_display;
-      case 'unrealized_pct':
-        return p.unrealized_pct;
-      case 'realized_pnl_display':
-        return p.realized_pnl_display;
-      case 'total_pnl_display':
-        return p.total_pnl_display;
-      default:
-        return p.ticker;
-    }
+    return p[key as keyof PositionMetrics] as string | number | null;
   }
 }

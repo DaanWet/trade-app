@@ -50,7 +50,8 @@ export class TradesComponent implements OnInit {
     const key = this.sort.key();
     if (!key) return rows;
     const dir = this.sort.dir() === 'asc' ? 1 : -1;
-    return [...rows].sort(
+    // rows is al een verse .filter()-array — in-place sorteren raakt het signal niet.
+    return rows.sort(
       (a, b) => compareValues(this.tradeValue(a, key), this.tradeValue(b, key)) * dir,
     );
   });

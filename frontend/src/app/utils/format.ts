@@ -3,7 +3,7 @@
  * Locale: nl-BE for the Belgian user (decimal comma, EUR symbol).
  */
 
-const LOCALE = 'nl-BE';
+export const LOCALE = 'nl-BE';
 
 export function formatMoney(value: number | null | undefined, currency: string, fractionDigits = 2): string {
   if (value == null || isNaN(value)) return '—';

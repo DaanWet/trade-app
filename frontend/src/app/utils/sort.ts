@@ -4,8 +4,7 @@
  * Locale nl-BE, in lijn met format.ts.
  */
 import { signal } from '@angular/core';
-
-const LOCALE = 'nl-BE';
+import { LOCALE } from './format';
 
 export type SortDir = 'asc' | 'desc';
 
