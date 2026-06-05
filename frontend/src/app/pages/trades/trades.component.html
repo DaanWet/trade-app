@@ -21,24 +21,58 @@
   <div class="alert alert-danger">{{ error() }}</div>
 }
 
+<div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+  <div>
+    <label class="form-label small text-muted mb-1">Ticker</label>
+    <select class="form-select form-select-sm" [value]="tickerFilter()" (change)="tickerFilter.set($any($event.target).value)">
+      <option value="">Alle tickers</option>
+      @for (sym of tickerOptions(); track sym) {
+        <option [value]="sym">{{ sym }}</option>
+      }
+    </select>
+  </div>
+  <div>
+    <label class="form-label small text-muted mb-1">Type</label>
+    <select class="form-select form-select-sm" [value]="sideFilter()" (change)="sideFilter.set($any($event.target).value)">
+      <option value="">Alle</option>
+      <option value="BUY">BUY</option>
+      <option value="SELL">SELL</option>
+    </select>
+  </div>
+  <div>
+    <label class="form-label small text-muted mb-1">Van</label>
+    <input type="date" class="form-control form-control-sm" [value]="dateFrom()" (change)="dateFrom.set($any($event.target).value)" />
+  </div>
+  <div>
+    <label class="form-label small text-muted mb-1">Tot</label>
+    <input type="date" class="form-control form-control-sm" [value]="dateTo()" (change)="dateTo.set($any($event.target).value)" />
+  </div>
+  @if (hasActiveFilters()) {
+    <button class="btn btn-sm btn-outline-secondary" (click)="clearFilters()">
+      <i class="bi bi-x-lg me-1"></i>Wissen
+    </button>
+  }
+  <div class="ms-auto text-muted small">{{ visible().length }} van {{ trades().length }}</div>
+</div>
+
 <div class="card">
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle mb-0">
       <thead>
         <tr>
-          <th>Datum</th>
-          <th>Ticker</th>
-          <th>Type</th>
-          <th class="num">Aandelen</th>
-          <th class="num">Prijs</th>
-          <th class="num">Kosten</th>
-          <th class="num">Totaal</th>
+          <th class="sortable" (click)="sort.toggle('trade_date')">Datum <i class="bi {{ sort.icon('trade_date') }}"></i></th>
+          <th class="sortable" (click)="sort.toggle('ticker')">Ticker <i class="bi {{ sort.icon('ticker') }}"></i></th>
+          <th class="sortable" (click)="sort.toggle('side')">Type <i class="bi {{ sort.icon('side') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('shares')">Aandelen <i class="bi {{ sort.icon('shares') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('price')">Prijs <i class="bi {{ sort.icon('price') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('fees')">Kosten <i class="bi {{ sort.icon('fees') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('total')">Totaal <i class="bi {{ sort.icon('total') }}"></i></th>
           <th>Notities</th>
           <th class="num"></th>
         </tr>
       </thead>
       <tbody>
-        @for (t of trades(); track t.id) {
+        @for (t of visible(); track t.id) {
           <tr>
             <td>{{ t.trade_date | d }}</td>
             <td class="fw-bold">{{ t.ticker }}</td>
@@ -63,7 +97,13 @@
           </tr>
         } @empty {
           <tr>
-            <td colspan="9" class="text-center text-muted py-4">Nog geen trades. Voeg je eerste toe.</td>
+            <td colspan="9" class="text-center text-muted py-4">
+              @if (trades().length) {
+                Geen trades voor deze filters.
+              } @else {
+                Nog geen trades. Voeg je eerste toe.
+              }
+            </td>
           </tr>
         }
       </tbody>

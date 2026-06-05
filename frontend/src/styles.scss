@@ -66,6 +66,20 @@ body {
   white-space: nowrap;
 }
 
+/* Sorteerbare tabelkoppen */
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+th.sortable:hover {
+  color: #58a6ff;
+}
+
+/* Datumkiezer-icoon zichtbaar maken op donker thema */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
 .dropdown-menu {
   background-color: #161b22;
   border-color: #30363d;

@@ -3,20 +3,20 @@
     <table class="table table-hover table-sm align-middle mb-0">
       <thead>
         <tr>
-          <th>Ticker</th>
-          <th class="num">Aandelen</th>
-          <th class="num">Avg cost</th>
-          <th class="num">Huidige prijs</th>
-          <th class="num">Waarde</th>
-          <th class="num">Cost basis</th>
-          <th class="num">Unrealized</th>
-          <th class="num">%</th>
-          <th class="num">Realized</th>
-          <th class="num">Total P&L</th>
+          <th class="sortable" (click)="sort.toggle('ticker')">Ticker <i class="bi {{ sort.icon('ticker') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('shares_open')">Aandelen <i class="bi {{ sort.icon('shares_open') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('avg_cost')">Avg cost <i class="bi {{ sort.icon('avg_cost') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('current_price')">Huidige prijs <i class="bi {{ sort.icon('current_price') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('market_value_display')">Waarde <i class="bi {{ sort.icon('market_value_display') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('cost_basis_display')">Cost basis <i class="bi {{ sort.icon('cost_basis_display') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('unrealized_pnl_display')">Unrealized <i class="bi {{ sort.icon('unrealized_pnl_display') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('unrealized_pct')">% <i class="bi {{ sort.icon('unrealized_pct') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('realized_pnl_display')">Realized <i class="bi {{ sort.icon('realized_pnl_display') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('total_pnl_display')">Total P&L <i class="bi {{ sort.icon('total_pnl_display') }}"></i></th>
         </tr>
       </thead>
       <tbody>
-        @for (p of positions(); track p.ticker) {
+        @for (p of sorted(); track p.ticker) {
           <tr [class.text-muted]="!p.is_open">
             <td>
               <div class="fw-bold">{{ p.ticker }}</div>
