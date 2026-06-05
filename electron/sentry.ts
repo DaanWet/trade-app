@@ -37,10 +37,34 @@ export function scrubText(input: string): string {
     .replace(/\b[A-Z]{1,6}(?:\.[A-Z])?\b/g, '<ticker>'); // ticker-like tokens
 }
 
-/**
- * Initialize Sentry in the main process. Returns true if Sentry is active (DSN present),
- * false otherwise. Call this BEFORE requiring the backend so a throw during require is caught.
- */
+// Span data keys whose string values may carry a URL/query/SQL with financial tokens.
+const SENSITIVE_SPAN_DATA = [
+  'http.url',
+  'http.target',
+  'url.full',
+  'url.path',
+  'url.query',
+  'db.statement',
+  'db.query.text',
+];
+
+/** Drop everything after `?` — query strings carry tickers (`?q=`, `?symbols=`). */
+function stripQuery(value: string): string {
+  const i = value.indexOf('?');
+  return i === -1 ? value : `${value.slice(0, i)}?<redacted>`;
+}
+
+/** Strip request bodies/query/cookies and scrub the URL (shared by error + transaction). */
+function scrubRequest(
+  req: { data?: unknown; query_string?: unknown; cookies?: unknown; url?: unknown } | undefined,
+): void {
+  if (!req) return;
+  delete req.data;
+  delete req.query_string;
+  delete req.cookies;
+  if (typeof req.url === 'string') req.url = scrubText(req.url);
+}
+
 /**
  * Sentry DSN. This is a PUBLIC ingest key — safe to commit and ship: it only allows
  * SENDING events, never reading them. Paste your project's DSN here to enable Sentry in
@@ -48,6 +72,11 @@ export function scrubText(input: string): string {
  * it in dev. Leave empty to keep Sentry off (local file + /api/diagnostics still work).
  */
 const DEFAULT_DSN = 'https://f1f2df2391419cabae0447b1a56b603a@o4511509464416256.ingest.de.sentry.io/4511512225579088';
+
+/**
+ * Initialize Sentry in the main process. Returns true if Sentry is active (DSN present),
+ * false otherwise. Call this BEFORE requiring the backend so a throw during require is caught.
+ */
 
 export function initSentry(opts: { release?: string; environment?: string } = {}): boolean {
   const dsn = process.env.SENTRY_DSN || DEFAULT_DSN;
@@ -58,15 +87,10 @@ export function initSentry(opts: { release?: string; environment?: string } = {}
     release: opts.release, // links events to a release (crash-free %, suspect commits, source maps)
     environment: opts.environment, // 'production' (packaged) vs 'development' (dev run)
     sendDefaultPii: false,
-    tracesSampleRate: 0.1,
+    tracesSampleRate: 1.0, // single-user desktop app → tiny volume, capture every trace
     enableLogs: true,
     beforeSend: (event) => {
-      if (event.request) {
-        delete event.request.data; // request bodies (trade amounts, shares)
-        delete event.request.query_string; // ?q= / ?ticker= / ?symbols=
-        delete event.request.cookies;
-        if (typeof event.request.url === 'string') event.request.url = scrubText(event.request.url);
-      }
+      scrubRequest(event.request);
       delete event.user; // belt-and-suspenders with sendDefaultPii:false
       if (event.message) event.message = scrubText(event.message);
       for (const ex of event.exception?.values ?? []) {
@@ -74,6 +98,28 @@ export function initSentry(opts: { release?: string; environment?: string } = {}
       }
       for (const b of event.breadcrumbs ?? []) {
         if (typeof b.message === 'string') b.message = scrubText(b.message);
+      }
+      return event;
+    },
+    beforeSendTransaction: (event) => {
+      // Transactions/spans bypass beforeSend — scrub them too. Span descriptions and
+      // url/sql data carry tickers in query strings; strip those but keep method/status/timing.
+      scrubRequest(event.request);
+      const traceData = (event.contexts?.trace as { data?: Record<string, unknown> } | undefined)
+        ?.data;
+      if (traceData) {
+        for (const key of SENSITIVE_SPAN_DATA) {
+          if (typeof traceData[key] === 'string') traceData[key] = stripQuery(traceData[key] as string);
+        }
+      }
+      for (const span of event.spans ?? []) {
+        if (typeof span.description === 'string') span.description = stripQuery(span.description);
+        const data = span.data as Record<string, unknown> | undefined;
+        if (data) {
+          for (const key of SENSITIVE_SPAN_DATA) {
+            if (typeof data[key] === 'string') data[key] = stripQuery(data[key] as string);
+          }
+        }
       }
       return event;
     },
