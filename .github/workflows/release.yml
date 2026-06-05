@@ -47,6 +47,21 @@ jobs:
           git tag "v${{ steps.decide.outputs.version }}"
           git push origin "v${{ steps.decide.outputs.version }}"
 
+      # Create the Release ONCE here (idempotent) so the parallel build matrix only uploads
+      # to it — without this the linux/win/mac jobs race to create the same release and all
+      # but the winner fail with "422 already_exists" (build needs check, so it exists first).
+      # Created as a DRAFT: if any build fails you're never left with a published/empty
+      # release (electron-updater ignores drafts). The release-notes job publishes it only
+      # after every platform built successfully.
+      - name: Pre-create draft GitHub release
+        if: steps.decide.outputs.should_release == 'true' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="v${{ steps.decide.outputs.version }}"
+          gh release view "$tag" >/dev/null 2>&1 \
+            || gh release create "$tag" --draft --title "$tag" --notes "Release $tag"
+
   build:
     needs: check
     # Build on manual runs, or on a push that bumped the version.
@@ -146,9 +161,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  # electron-builder publishes the Release with only the latest commit as its
-  # body. Once all installers are uploaded, replace that body with a
-  # categorized changelog of every commit since the previous v-tag.
+  # The release was kept as a DRAFT while the matrix uploaded installers. Now that every
+  # platform built successfully, publish it (--draft=false) and replace electron-builder's
+  # default body with a categorized changelog of every commit since the previous v-tag.
   release-notes:
     needs: [check, build]
     if: github.event_name == 'push' && needs.check.outputs.should_release == 'true'
@@ -177,4 +192,4 @@ jobs:
             | bash .github/scripts/release-notes.sh "$heading" > release-notes.md
           echo "----- generated release notes -----"
           cat release-notes.md
-          gh release edit "$tag" --notes-file release-notes.md
+          gh release edit "$tag" --draft=false --notes-file release-notes.md

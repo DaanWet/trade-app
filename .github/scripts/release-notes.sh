@@ -50,6 +50,10 @@ classify() {
 }
 
 while IFS= read -r subject; do
+  # Trim leading/trailing whitespace — a stray leading space (e.g. " Add X")
+  # would otherwise dodge every keyword match and fall through to Overig.
+  subject="${subject#"${subject%%[![:space:]]*}"}"
+  subject="${subject%"${subject##*[![:space:]]}"}"
   [ -z "$subject" ] && continue
   case "$(classify "$subject")" in
     features) features+=("- $subject") ;;
