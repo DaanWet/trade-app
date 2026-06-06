@@ -1,13 +1,14 @@
 {
   "name": "trade-app-desktop",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Trade App desktop wrapper (Electron)",
   "main": "electron/dist/main.js",
   "scripts": {
     "build:frontend": "npm --prefix frontend run build -- --configuration=production",
     "build:backend": "npm --prefix backend run build",
     "build:electron": "tsc -p electron/tsconfig.json",
-    "build": "npm run build:frontend && npm run build:backend && npm run build:electron",
+    "check:deps": "node scripts/check-dep-parity.cjs",
+    "build": "npm run check:deps && npm run build:frontend && npm run build:backend && npm run build:electron",
     "rebuild-native": "electron-rebuild -f -w better-sqlite3",
     "postinstall": "electron-builder install-app-deps",
     "start": "npm run build && electron .",

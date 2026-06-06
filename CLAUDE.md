@@ -194,6 +194,20 @@ Electron wraps the Angular SPA + Express backend into one desktop app (run from 
 In production Electron starts the backend in-process (no port 3100 / 33793): it imports `app`
 from `backend/dist/app.js` and listens on a random localhost port.
 
+### Dependency parity (root ↔ backend) — important
+
+The backend's runtime deps are installed **twice**: `npm run dev` runs against `backend/node_modules`,
+but the packaged app bundles **only the root `node_modules`** (electron-builder `files` does not include
+`backend/node_modules`), so `backend/dist/app.js` resolves `express`/`zod`/`yahoo-finance2`/… from **root**
+at runtime. Both `package.json`s therefore list the same backend runtime deps, and they **must stay on the
+same version** — otherwise the packaged app silently runs a different version than dev. (This bit us once:
+root shipped `yahoo-finance2` 3.14.0 with a stale response schema → `Failed Yahoo Schema validation` →
+empty ticker search, while dev ran 3.15.2.) `better-sqlite3` is the deliberate exception: it lives in both
+(backend = Node ABI for dev, root = Electron ABI for the package) at the same version, and `electron/main.ts`
+forces it to resolve from root via a `_resolveFilename` override.
+`npm run check:deps` (a `build` pre-step, [scripts/check-dep-parity.cjs](scripts/check-dep-parity.cjs))
+compares the installed root vs backend versions and **fails the build on any drift**.
+
 `.github/workflows/release.yml` auto-tags from the package.json version and publishes
 linux/win/mac builds to a GitHub Release.
 
