@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import fs from 'fs';
@@ -77,12 +77,29 @@ async function startBackend(): Promise<number> {
   });
 }
 
+// Single-user app: we don't want the default File/Edit/View bar on screen, but the standard
+// keyboard shortcuts (copy/paste/cut, select-all, undo/redo, reload, zoom, fullscreen, devtools)
+// are wired to the application menu's roles — drop the menu and they stop working. So we install
+// a minimal role-based menu (keeps the accelerators) and hide the bar via autoHideMenuBar below.
+// On Windows/Linux the bar stays hidden (Alt reveals it); on macOS the OS shows it at screen top.
+function applyHiddenMenu(): void {
+  const isMac = process.platform === 'darwin';
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createWindow(port: number): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     show: false,
     title: 'Trade App',
+    autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -109,6 +126,8 @@ function createWindow(port: number): void {
 }
 
 app.whenReady().then(async () => {
+  applyHiddenMenu();
+
   try {
     const port = await startBackend();
     createWindow(port);
