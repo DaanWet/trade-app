@@ -1,7 +1,8 @@
+// Wires the @sentry/electron IPC bridge (window.__SENTRY_IPC__) so the renderer SDK reaches
+// the main process over Electron IPC instead of the unsupported `sentry-ipc://` protocol
+// fetch. Without it, renderer errors/replay/traces never reach Sentry. Requires sandbox:false
+// on the BrowserWindow (a sandboxed preload can't require this node module).
+import '@sentry/electron/preload';
+
 // Reserved for future contextBridge APIs (file dialogs, native menus, etc.).
-// Kept minimal so the renderer talks to Express via fetch like in the browser.
-//
-// NOTE: to enable @sentry/electron renderer capture (errors/replay/traces) in the packaged
-// app, add `import '@sentry/electron/preload';` here AND set `sandbox: false` on the
-// BrowserWindow (a sandboxed preload can't require this node module), or bundle the preload.
 export {};

@@ -86,6 +86,10 @@ function createWindow(port: number): void {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      // preload.ts requires @sentry/electron/preload (a node module) to wire the Sentry IPC
+      // bridge; a sandboxed preload can't require modules. Renderer stays isolated via
+      // contextIsolation + nodeIntegration:false (it only loads our own bundled content).
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
