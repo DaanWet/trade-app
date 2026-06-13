@@ -63,7 +63,14 @@ export class TradeFormComponent implements OnInit {
   held = signal<number | null>(null);
 
   readonly sides: TradeSide[] = ['BUY', 'SELL'];
-  readonly currencies = COMMON_CURRENCIES;
+
+  /** Currency dropdown options. If the form holds a currency outside the standard
+   *  list (e.g. an exotic quote currency auto-filled from Yahoo), surface it as an
+   *  extra option so the <select> always reflects the stored value. */
+  currencyOptions = computed(() => {
+    const cur = this.form().currency;
+    return COMMON_CURRENCIES.includes(cur) ? COMMON_CURRENCIES : [cur, ...COMMON_CURRENCIES];
+  });
 
   /** True when a SELL would close more shares than are held (drives the inline warning). */
   sellExceedsHeld = computed(() => {

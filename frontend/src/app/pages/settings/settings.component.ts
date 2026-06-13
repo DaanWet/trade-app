@@ -1,8 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
-
-const CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'];
+import { COMMON_CURRENCIES } from '../../utils/format';
 
 @Component({
   selector: 'app-settings',
@@ -17,7 +16,7 @@ export class SettingsComponent implements OnInit {
   saving = signal(false);
   message = signal<string | null>(null);
 
-  readonly currencies = CURRENCIES;
+  readonly currencies = COMMON_CURRENCIES;
 
   ngOnInit(): void {
     this.api.getSettings().subscribe(s => {

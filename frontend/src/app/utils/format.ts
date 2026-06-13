@@ -62,5 +62,39 @@ export function pnlClass(value: number | null | undefined): string {
   return value > 0 ? 'text-success' : 'text-danger';
 }
 
-/** Currencies offered in the trade- and cash-form selectors. */
-export const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'];
+/** Currencies offered in the trade-/cash-form selectors and the settings display-currency
+ *  picker. The full ECB reference set (all convertible via Frankfurter) plus TWD (convertible
+ *  via the Yahoo FX fallback). EUR/USD pinned first, the rest alphabetical. */
+export const COMMON_CURRENCIES = [
+  'EUR',
+  'USD',
+  'AUD',
+  'BRL',
+  'CAD',
+  'CHF',
+  'CNY',
+  'CZK',
+  'DKK',
+  'GBP',
+  'HKD',
+  'HUF',
+  'IDR',
+  'ILS',
+  'INR',
+  'ISK',
+  'JPY',
+  'KRW',
+  'MXN',
+  'MYR',
+  'NOK',
+  'NZD',
+  'PHP',
+  'PLN',
+  'RON',
+  'SEK',
+  'SGD',
+  'THB',
+  'TRY',
+  'TWD',
+  'ZAR',
+];

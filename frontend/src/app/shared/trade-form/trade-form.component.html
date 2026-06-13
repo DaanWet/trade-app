@@ -80,7 +80,7 @@
       <label class="form-label small">Currency</label>
       <select class="form-select" [value]="form().currency"
               (change)="patch('currency', $any($event.target).value)">
-        @for (c of currencies; track c) {
+        @for (c of currencyOptions(); track c) {
           <option [value]="c">{{ c }}</option>
         }
       </select>
