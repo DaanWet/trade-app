@@ -78,23 +78,11 @@
   <div class="card p-3 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h5 class="mb-0">Portfolio waarde</h5>
-      @if (chartVisible()) {
-        <button class="btn btn-sm btn-outline-secondary" (click)="loadHistory()" [disabled]="loadingHistory()">
-          <i class="bi bi-arrow-clockwise me-1"></i>Vernieuwen
-        </button>
-      }
+      <button class="btn btn-sm btn-outline-secondary" (click)="loadHistory()" [disabled]="loadingHistory()">
+        <i class="bi bi-arrow-clockwise me-1"></i>Vernieuwen
+      </button>
     </div>
-    @if (!chartVisible()) {
-      <div class="text-center py-4">
-        <p class="text-muted small mb-3">
-          De grafiek is verborgen om Yahoo API-belasting te beperken.<br>
-          Klik om de historische data op te halen (1 call per ticker + currency-pair).
-        </p>
-        <button class="btn btn-outline-primary btn-sm" (click)="showChart()">
-          <i class="bi bi-graph-up me-1"></i>Toon historische grafiek
-        </button>
-      </div>
-    } @else if (loadingHistory()) {
+    @if (loadingHistory()) {
       <div class="text-muted small">Geschiedenis laden…</div>
     } @else if (history().length === 0) {
       <div class="text-muted small">Geen geschiedenis beschikbaar.</div>
@@ -129,11 +117,33 @@
             (change)="customTo.set($any($event.target).value)"
           />
         }
+        <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Weergave">
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            [class.active]="valueMode() === 'value'"
+            (click)="valueMode.set('value')"
+          >
+            €
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            [class.active]="valueMode() === 'percent'"
+            (click)="valueMode.set('percent')"
+          >
+            %
+          </button>
+        </div>
       </div>
       @if (visibleHistory().length === 0) {
         <div class="text-muted small">Geen data in dit bereik.</div>
       } @else {
-        <app-portfolio-chart [data]="visibleHistory()" [currency]="d.totals.display_currency" />
+        <app-portfolio-chart
+          [data]="visibleHistory()"
+          [currency]="d.totals.display_currency"
+          [mode]="valueMode()"
+        />
       }
     }
   </div>

@@ -31,8 +31,6 @@ export class DashboardComponent implements OnInit {
   loading = signal(true);
   data = signal<PositionsResponse | null>(null);
   history = signal<PortfolioPoint[]>([]);
-  /** Chart is opt-in to avoid the bulky historical/FX Yahoo calls on every dashboard load. */
-  chartVisible = signal(false);
   loadingHistory = signal(false);
   error = signal<string | null>(null);
 
@@ -40,6 +38,9 @@ export class DashboardComponent implements OnInit {
   range = signal<RangeKey>('MAX');
   customFrom = signal('');
   customTo = signal('');
+
+  /** Chart value mode — absolute money (€) vs. % change vs. the start of the visible range. */
+  valueMode = signal<'value' | 'percent'>('value');
 
   readonly ranges: { key: RangeKey; label: string }[] = [
     { key: '7D', label: '7D' },
@@ -71,6 +72,7 @@ export class DashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.refresh();
+    this.loadHistory();
   }
 
   refresh(): void {
@@ -86,11 +88,6 @@ export class DashboardComponent implements OnInit {
         this.loading.set(false);
       },
     });
-  }
-
-  showChart(): void {
-    this.chartVisible.set(true);
-    if (this.history().length === 0) this.loadHistory();
   }
 
   loadHistory(): void {

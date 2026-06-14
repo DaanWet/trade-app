@@ -37,11 +37,13 @@ Chart.register(
 @Component({
   selector: 'app-portfolio-chart',
   standalone: true,
-  template: '<canvas #canvas style="max-height: 320px;"></canvas>',
+  template: '<div style="position: relative; height: 440px;"><canvas #canvas></canvas></div>',
 })
 export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
   data = input.required<PortfolioPoint[]>();
   currency = input<string>('EUR');
+  /** 'value' → absolute money; 'percent' → % change vs. the first visible point of each line. */
+  mode = input<'value' | 'percent'>('value');
 
   @ViewChild('canvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
   private chart?: Chart;
@@ -49,6 +51,8 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
   constructor() {
     effect(() => {
       const points = this.data();
+      // Read mode() so toggling €/% re-renders the existing chart.
+      this.mode();
       if (this.chart) this.render(points);
     });
   }
@@ -63,9 +67,11 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
 
   private render(points: PortfolioPoint[]): void {
     const labels = points.map(p => p.date);
-    const total = points.map(p => p.total);
-    const stocks = points.map(p => p.market_value);
-    const deposits = points.map(p => p.net_deposits);
+    const percent = this.mode() === 'percent';
+    // In percent mode each line is rebased to its own first visible value (= 0%).
+    const total = this.series(points.map(p => p.total), percent);
+    const stocks = this.series(points.map(p => p.market_value), percent);
+    const deposits = this.series(points.map(p => p.net_deposits), percent);
     const unit = this.timeUnit(points);
 
     if (this.chart) {
@@ -145,8 +151,11 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
             grid: { color: '#21262d' },
             ticks: {
               color: '#8b949e',
-              // nl-BE → decimal comma. 0 decimals on the axis keeps it compact.
-              callback: (value) => this.formatMoney(Number(value), 0),
+              // Percent mode → "+1,2 %"; value mode → compact 0-decimal money (nl-BE comma).
+              callback: (value) =>
+                this.mode() === 'percent'
+                  ? this.formatPercent(Number(value), 0)
+                  : this.formatMoney(Number(value), 0),
             },
           },
         },
@@ -159,7 +168,12 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
           },
           tooltip: {
             callbacks: {
-              label: (ctx) => `${ctx.dataset.label}: ${this.formatMoney(ctx.parsed.y ?? 0, 2)}`,
+              label: (ctx) => {
+                const y = ctx.parsed.y ?? 0;
+                const formatted =
+                  this.mode() === 'percent' ? this.formatPercent(y, 2) : this.formatMoney(y, 2);
+                return `${ctx.dataset.label}: ${formatted}`;
+              },
             },
           },
         },
@@ -179,6 +193,18 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
     return 'month';
   }
 
+  /**
+   * In percent mode, rebase a series to its first visible value (= 0%): `(v / base - 1) * 100`.
+   * Base is the first non-zero point so e.g. net deposits that start at 0 don't divide by zero;
+   * an all-zero series stays flat at 0%. In value mode the raw numbers pass through unchanged.
+   */
+  private series(values: number[], percent: boolean): number[] {
+    if (!percent) return values;
+    const base = values.find(v => v !== 0) ?? 0;
+    if (base === 0) return values.map(() => 0);
+    return values.map(v => (v / base - 1) * 100);
+  }
+
   private formatMoney(value: number, fractionDigits: number): string {
     return new Intl.NumberFormat('nl-BE', {
       style: 'currency',
@@ -186,5 +212,15 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
       minimumFractionDigits: fractionDigits,
       maximumFractionDigits: fractionDigits,
     }).format(value);
+  }
+
+  private formatPercent(value: number, fractionDigits: number): string {
+    return new Intl.NumberFormat('nl-BE', {
+      style: 'percent',
+      signDisplay: 'exceptZero',
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+      // Values are already in percent units (e.g. 1.2 = +1,2 %), so divide back out.
+    }).format(value / 100);
   }
 }
