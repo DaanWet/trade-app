@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { insertTrade, getTrade, type TradeRow } from "../queries/trades";
-import { upsertTicker } from "../queries/prices";
+import { upsertTicker, upsertFxRate } from "../queries/prices";
 import { upsertSetting } from "../helpers/settings";
 import { SETTING_KEYS } from "../helpers/constants";
 import {
@@ -207,5 +207,70 @@ describe("sharesHeld + findShareOverdraw (DB-backed)", () => {
     const bad = findShareOverdraw({ ticker: "AAPL", trade_date: "2026-01-01", side: "BUY", shares: 5, price: 100, currency: "EUR", fees: 0 }, previous);
     expect(bad).not.toBeNull();
     expect(bad!.oversold).toBeCloseTo(3, 9);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #10: a trade booked in a currency other than the one the stock quotes in.
+// The live quote is in the instrument's currency; treating it as if it were already
+// in the trade currency silently mis-values the whole position.
+// ---------------------------------------------------------------------------
+describe("computeAllPositions — trade currency differs from quote currency", () => {
+  const today = new Date().toISOString().slice(0, 10);
+
+  /** USD→EUR at 0.9, on both the buy date and today, so no provider call is needed. */
+  function seedUsdEurRate(...dates: string[]) {
+    for (const rate_date of dates) {
+      upsertFxRate({ base: "USD", quote: "EUR", rate_date, rate: 0.9 });
+    }
+  }
+
+  it("values a EUR-booked buy of a USD-quoted stock at the converted market price", async () => {
+    seedUsdEurRate(today, "2026-01-05");
+    seedFreshQuote("AAPL", 200, "USD");
+    // The user paid EUR 1000 in total; the market now says 10 × $200 = $2000.
+    insertTrade({ ticker: "AAPL", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 100, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("AAPL");
+    expect(p.currency).toBe("EUR");       // what was paid
+    expect(p.quote_currency).toBe("USD"); // what current_price is denominated in
+    expect(p.current_price).toBe(200);    // left in USD, unconverted
+
+    // $2000 × 0.9 = EUR 1800, against an EUR 1000 cost basis.
+    expect(p.cost_basis_display).toBeCloseTo(1000, 6);
+    expect(p.market_value_display).toBeCloseTo(1800, 6);
+    expect(p.unrealized_pnl_display).toBeCloseTo(800, 6);
+  });
+
+  it("states native market_value in the trade currency so it is comparable to cost_basis", async () => {
+    seedUsdEurRate(today, "2026-01-05");
+    seedFreshQuote("AAPL", 200, "USD");
+    insertTrade({ ticker: "AAPL", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 100, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("AAPL");
+    expect(p.market_value).toBeCloseTo(1800, 6);   // EUR, not the raw $2000
+    expect(p.unrealized_pnl).toBeCloseTo(800, 6);
+    expect(p.unrealized_pct).toBeCloseTo(80, 6);   // 800 / 1000
+  });
+
+  it("leaves a matching-currency position exactly as before (no conversion applied)", async () => {
+    seedFreshQuote("MSFT", 150, "EUR");
+    insertTrade({ ticker: "MSFT", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 100, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("MSFT");
+    expect(p.currency).toBe("EUR");
+    expect(p.quote_currency).toBe("EUR");
+    expect(p.market_value).toBeCloseTo(1500, 6);
+    expect(p.market_value_display).toBeCloseTo(1500, 6);
+    expect(p.unrealized_pnl_display).toBeCloseTo(500, 6);
+  });
+
+  it("falls back to the trade currency when the quote names no currency", async () => {
+    upsertTicker({ symbol: "NOCUR", name: "NOCUR", currency: null, last_price: 150, last_price_at: new Date().toISOString() });
+    insertTrade({ ticker: "NOCUR", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 100, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("NOCUR");
+    expect(p.quote_currency).toBe("EUR");
+    expect(p.market_value_display).toBeCloseTo(1500, 6);
   });
 });

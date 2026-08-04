@@ -37,18 +37,29 @@ export interface RealizedLot {
 
 /**
  * Aggregated state for one ticker.
- * Native amounts are in the ticker's trade currency; *_display variants are converted.
+ *
+ * Two currencies are in play and they are NOT interchangeable:
+ *  - `currency`       — the trade currency, what the user actually paid in. Governs
+ *                       avg_cost, cost_basis, market_value, unrealized_pnl, total_pnl.
+ *  - `quote_currency` — what the market quotes the instrument in. Governs current_price
+ *                       ONLY. Usually identical to `currency`, but a trade booked in EUR
+ *                       for a USD-listed stock makes them differ, and treating the quote
+ *                       as if it were already in the trade currency silently inflates or
+ *                       deflates the whole position (GitHub issue #10).
+ *
+ * *_display variants are converted to the user's display currency.
  */
 export interface PositionMetrics {
   ticker: string;
   name: string | null;
   currency: string;            // trade currency of the position
+  quote_currency: string;      // currency the live quote is denominated in
   shares_open: number;
   avg_cost: number;            // weighted-average cost per share of remaining open shares
   cost_basis: number;          // shares_open * avg_cost (open lots cost)
-  current_price: number | null;
+  current_price: number | null; // in quote_currency, NOT in currency
   price_as_of: string | null;  // when current_price was last successfully fetched (ISO8601)
-  market_value: number | null; // shares_open * current_price
+  market_value: number | null; // shares_open * current_price, converted to the trade currency
   unrealized_pnl: number | null;
   unrealized_pct: number | null;
   realized_pnl: number;        // sum of all realized P&L on this ticker
@@ -302,7 +313,19 @@ async function metricsFromState(
   const costBasis = state.open_lots.reduce((s, l) => s + l.shares_remaining * l.cost_per_share, 0);
   const avgCost = sharesOpen > 0 ? costBasis / sharesOpen : 0;
   const currentPrice = quote?.last_price ?? null;
-  const marketValue = currentPrice != null && sharesOpen > 0 ? sharesOpen * currentPrice : null;
+  // The quote is denominated in the instrument's own currency, which is not necessarily
+  // the currency the trade was booked in. Falling back to the trade currency only when
+  // the quote doesn't name one keeps single-currency positions byte-identical.
+  const quoteCurrency = quote?.currency ?? state.currency;
+  // Raw market value in the QUOTE currency — the only place that number is valid as-is.
+  const marketValueQuote =
+    currentPrice != null && sharesOpen > 0 ? sharesOpen * currentPrice : null;
+  // Native market value is stated in the trade currency so it can be compared against
+  // cost_basis. convert() short-circuits when the two currencies match.
+  const marketValue =
+    marketValueQuote != null
+      ? await convert(marketValueQuote, quoteCurrency, state.currency)
+      : null;
   const unrealized = marketValue != null ? marketValue - costBasis : null;
   const unrealizedPct = unrealized != null && costBasis > 0 ? (unrealized / costBasis) * 100 : null;
   const realized = state.realized.reduce((s, r) => s + r.realized_pnl, 0);
@@ -334,7 +357,11 @@ async function metricsFromState(
     })),
     displayCurrency,
   );
-  const marketValueDisplay = marketValue != null ? await convert(marketValue, state.currency, displayCurrency) : null;
+  // Converted straight from the quote currency (one hop, not trade-currency round-trip).
+  const marketValueDisplay =
+    marketValueQuote != null
+      ? await convert(marketValueQuote, quoteCurrency, displayCurrency)
+      : null;
   const unrealizedDisplay = marketValueDisplay != null ? marketValueDisplay - costBasisDisplay : null;
   const totalPnlDisplay =
     unrealizedDisplay != null
@@ -347,6 +374,7 @@ async function metricsFromState(
     ticker: state.ticker,
     name: quote?.name ?? null,
     currency: state.currency,
+    quote_currency: quoteCurrency,
     shares_open: sharesOpen,
     avg_cost: avgCost,
     cost_basis: costBasis,

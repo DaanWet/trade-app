@@ -1,6 +1,7 @@
 import { listTrades, distinctTickers, tradeCashFlow } from '../queries/trades';
 import { listCashTx, cashTxFlow } from '../queries/cash';
 import { fetchHistorical } from './marketData';
+import { getTicker } from '../queries/prices';
 import { convert, warmHistoricalRates } from './fxService';
 import { getSetting } from '../helpers/settings';
 import { SETTING_KEYS } from '../helpers/constants';
@@ -39,11 +40,15 @@ export async function buildPortfolioHistory(): Promise<PortfolioPoint[]> {
   const today = new Date();
   const displayCurrency = getSetting(SETTING_KEYS.DISPLAY_CURRENCY) ?? 'EUR';
 
-  // Determine currency per ticker (assumes one currency per ticker; warned elsewhere if not).
+  // Currency per ticker for valuing daily closes. Those closes come from the market, so
+  // they are in the instrument's QUOTE currency — which is not necessarily the currency
+  // the trades were booked in (issue #10). Read it from the cached ticker row (a plain DB
+  // read: the trade-insert warm-up populates it) and fall back to the trade currency when
+  // the ticker was never quoted, which is also the single-currency case.
   const tickerCurrency = new Map<string, string>();
   for (const t of tickers) {
     const trade = trades.find(tr => tr.ticker === t)!;
-    tickerCurrency.set(t, trade.currency);
+    tickerCurrency.set(t, getTicker(t)?.currency ?? trade.currency);
   }
 
   // Fetch historical prices per ticker AND warm all FX rates IN PARALLEL.
@@ -57,8 +62,12 @@ export async function buildPortfolioHistory(): Promise<PortfolioPoint[]> {
   for (const tx of cashTxs) {
     if (tx.currency !== displayCurrency) uniquePairs.add(`${tx.currency}|${displayCurrency}`);
   }
-  // Trade-currency → display-currency conversions for cash flows can use other dates,
-  // but the same set of pairs covers them.
+  // Trade cash flows convert from the TRADE currency, which can differ from the ticker's
+  // quote currency above. Warm those pairs too — otherwise convert() silently returns the
+  // unconverted amount and `invested` (and therefore cash) is wrong.
+  for (const t of trades) {
+    if (t.currency !== displayCurrency) uniquePairs.add(`${t.currency}|${displayCurrency}`);
+  }
   const pairs = Array.from(uniquePairs).map(p => {
     const [from, to] = p.split('|');
     return { from, to };

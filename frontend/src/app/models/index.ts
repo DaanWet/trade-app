@@ -26,8 +26,11 @@ export interface TradeInput {
 
 export interface PositionMetrics {
   ticker: string;
-  name: string | null;
+  /** Handelsmunt: waarin de trades geboekt zijn (avg_cost, cost_basis, market_value). */
   currency: string;
+  /** Noteringsmunt: waarin de beurs het aandeel quoteert. Enkel current_price staat hierin. */
+  quote_currency: string;
+  name: string | null;
   shares_open: number;
   avg_cost: number;
   cost_basis: number;

@@ -78,8 +78,9 @@
 
     <div class="col-md-1">
       <label class="form-label small">Currency</label>
-      <select class="form-select" [value]="form().currency"
-              (change)="patch('currency', $any($event.target).value)">
+      <select class="form-select" [class.border-warning]="currencyMismatch()"
+              [value]="form().currency"
+              (change)="onCurrencyInput($any($event.target).value)">
         @for (c of currencyOptions(); track c) {
           <option [value]="c">{{ c }}</option>
         }
@@ -98,6 +99,16 @@
              (input)="patch('notes', $any($event.target).value)" />
     </div>
   </div>
+
+  @if (currencyMismatch()) {
+    <div class="alert alert-warning mt-3 mb-0 py-2 small">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      {{ form().ticker }} noteert in <strong>{{ quoteCurrency() }}</strong>, maar je boekt deze
+      trade in <strong>{{ form().currency }}</strong>. Meestal is dat een vergissing: de
+      prijs per aandeel staat normaal in de noteringsmunt. Klopt het toch, dan rekent de app
+      alles automatisch om — je kan gewoon verder.
+    </div>
+  }
 
   @if (error()) {
     <div class="alert alert-danger mt-3 mb-0 py-2">{{ error() }}</div>

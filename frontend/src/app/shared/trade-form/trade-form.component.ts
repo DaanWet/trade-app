@@ -54,6 +54,11 @@ export class TradeFormComponent implements OnInit {
    *  that, ticker/date changes no longer overwrite their value. Reset on ticker change. */
   private priceTouched = signal(false);
 
+  /** Same idea for the currency dropdown. Without it the price lookup would silently
+   *  overwrite a deliberate choice on every ticker/date change — including when editing
+   *  an existing trade, which would rewrite the stored currency behind the user's back. */
+  private currencyTouched = signal(false);
+
   /** Last price we auto-fetched, surfaced to the UI as "Suggested: $X.XX (date)". */
   suggestedPrice = signal<{ price: number; currency: string | null; date: string } | null>(null);
   fetchingPrice = signal(false);
@@ -70,6 +75,17 @@ export class TradeFormComponent implements OnInit {
   currencyOptions = computed(() => {
     const cur = this.form().currency;
     return COMMON_CURRENCIES.includes(cur) ? COMMON_CURRENCIES : [cur, ...COMMON_CURRENCIES];
+  });
+
+  /** The currency the instrument is quoted in, as reported by the price lookup.
+   *  Null while no lookup has succeeded for the current ticker. */
+  quoteCurrency = computed(() => this.suggestedPrice()?.currency ?? null);
+
+  /** True when the chosen currency isn't the one the stock is quoted in. Legal — the
+   *  backend converts — but usually a mistake, so the form says so out loud. */
+  currencyMismatch = computed(() => {
+    const q = this.quoteCurrency();
+    return q != null && q !== this.form().currency;
   });
 
   /** True when a SELL would close more shares than are held (drives the inline warning). */
@@ -143,6 +159,7 @@ export class TradeFormComponent implements OnInit {
         notes: init.notes ?? '',
       });
       this.priceTouched.set(true);
+      this.currencyTouched.set(true);
     }
 
     this.searchTerm$.pipe(
@@ -171,7 +188,7 @@ export class TradeFormComponent implements OnInit {
         return;
       }
       this.suggestedPrice.set(result);
-      if (result.currency) this.patch('currency', result.currency);
+      if (result.currency && !this.currencyTouched()) this.patch('currency', result.currency);
       if (!this.priceTouched()) this.patch('price', result.price);
     });
 
@@ -197,11 +214,19 @@ export class TradeFormComponent implements OnInit {
     this.patch('price', value);
   }
 
+  /** Called from the currency dropdown — the choice is now the user's, so the price
+   *  lookup stops overwriting it (and the mismatch hint can surface). */
+  onCurrencyInput(value: string): void {
+    this.currencyTouched.set(true);
+    this.patch('currency', value);
+  }
+
   onTickerInput(value: string): void {
     const next = value.toUpperCase();
     if (next !== this.form().ticker) {
-      // New ticker → previous "suggested" price no longer applies; allow re-fill.
+      // New ticker → previous "suggested" price/currency no longer apply; allow re-fill.
       this.priceTouched.set(false);
+      this.currencyTouched.set(false);
     }
     this.patch('ticker', next);
     if (value.trim().length >= 1) {
@@ -218,6 +243,7 @@ export class TradeFormComponent implements OnInit {
 
   pickResult(r: TickerSearchResult): void {
     this.priceTouched.set(false);
+    this.currencyTouched.set(false);
     this.patch('ticker', r.symbol);
     this.showResults.set(false);
     // The effect() will trigger lookupPrice() on its own.
@@ -230,6 +256,8 @@ export class TradeFormComponent implements OnInit {
     this.patch('price', s.price);
     if (s.currency) this.patch('currency', s.currency);
     this.priceTouched.set(false);
+    // Accepting the suggestion means accepting its currency — drop any earlier override.
+    this.currencyTouched.set(false);
   }
 
   submit(): void {

@@ -124,6 +124,33 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - Cache: past-date rates are immutable; today's rate is reused per-day (refreshed at next app start).
 - `warmHistoricalRates(pairs, from, to)`: one provider call per pair, then forward-fill the entire range so per-day `convert()` is a pure cache hit. Crucial for portfolio history.
 
+#### Three currencies, not one — trade vs quote vs display
+
+A position juggles **three** currencies, and conflating the first two silently mis-values
+the whole portfolio (issue #10):
+
+| currency | source | governs |
+| --- | --- | --- |
+| **trade** (`trades.currency`) | what the user typed | `avg_cost`, `cost_basis`, `market_value`, `unrealized_pnl`, cash flows |
+| **quote** (`tickers.currency`) | the exchange, via the price provider | `current_price`, raw daily closes in `daily_prices` |
+| **display** (`settings.display_currency`) | user setting | every `*_display` field, totals, tax, cash balance |
+
+Trade and quote currency usually coincide, so the bug hid for a long time: booking a USD-listed
+stock in EUR made a $200 quote render and total as €200. **Anything that comes back from a price
+provider is in the quote currency** — never assume it matches the trade. Rules:
+
+- `PositionMetrics.quote_currency` carries it to the frontend; `current_price` is the only native
+  field denominated in it. `market_value` is converted into the *trade* currency so it stays
+  comparable to `cost_basis`; `market_value_display` converts from the quote currency in one hop.
+- `portfolioHistory` resolves each ticker's currency from the cached `tickers` row (a plain DB
+  read — the trade-insert warm-up populates it), falling back to the trade currency. It warms FX
+  pairs for **both** the quote currencies (valuing closes) and the trade currencies (cash flows).
+- `taxCalc` already did this right: the fotomoment close converts from `foto.currency ?? l.currency`.
+- `convert()` short-circuits when `from === to`, so the single-currency path is unchanged and free.
+- The trade form warns (non-blocking) when the picked currency isn't the quote currency, and its
+  `currencyTouched` flag stops the price lookup from overwriting a deliberate choice — without it
+  editing a trade would silently rewrite its stored currency.
+
 ### Cash position (cashService.ts)
 
 - Single balance in **display currency**, fully **derived** (no ledger): `cash_balance = net_deposits − net_invested`.
