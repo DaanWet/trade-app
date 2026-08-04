@@ -47,6 +47,7 @@ export interface PositionMetrics {
   avg_cost: number;            // weighted-average cost per share of remaining open shares
   cost_basis: number;          // shares_open * avg_cost (open lots cost)
   current_price: number | null;
+  price_as_of: string | null;  // when current_price was last successfully fetched (ISO8601)
   market_value: number | null; // shares_open * current_price
   unrealized_pnl: number | null;
   unrealized_pct: number | null;
@@ -350,6 +351,7 @@ async function metricsFromState(
     avg_cost: avgCost,
     cost_basis: costBasis,
     current_price: currentPrice,
+    price_as_of: quote?.last_price_at ?? null,
     market_value: marketValue,
     unrealized_pnl: unrealized,
     unrealized_pct: unrealizedPct,

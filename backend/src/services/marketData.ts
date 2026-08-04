@@ -8,6 +8,7 @@ import {
   getMostRecentDailyPrice,
 } from '../queries/prices';
 import { PRICE_CACHE_TTL_SECONDS } from '../helpers/constants';
+import { logger } from '../helpers/logger';
 import { priceProvider } from './providers';
 import type { SymbolSearchResult } from './providers/types';
 
@@ -41,12 +42,20 @@ export async function fetchQuote(symbol: string, opts?: { force?: boolean }): Pr
   const q = await priceProvider.fetchQuote(sym);
   if (!q) return cached;
 
+  // A quote can come back without a price (delisted, halted, a fund that only quotes NAV).
+  // upsertTicker COALESCEs nulls, so stamping `last_price_at` anyway would keep the old
+  // price while making it look freshly fetched — a frozen price indistinguishable from a
+  // live one, and never retried within the TTL. Only a real price refreshes the timestamp.
+  if (q.last_price == null) {
+    logger.warn('marketData', `quote for ${sym} carried no price; keeping the cached value`);
+  }
+
   upsertTicker({
     symbol: sym,
     name: q.name,
     currency: q.currency,
     last_price: q.last_price,
-    last_price_at: new Date().toISOString(),
+    last_price_at: q.last_price != null ? new Date().toISOString() : null,
     exchange: q.exchange,
     quote_type: q.quote_type,
   });

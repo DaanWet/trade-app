@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getRecentEvents, getLogFilePath, type RecentEvent } from '../helpers/logger';
 import { getActiveLimited, type ProviderId } from '../services/rateLimitMonitor';
+import { getProviderFailures } from '../services/providerHealth';
 import { lastConvertFailures } from '../services/fxService';
 import { getAllSettings } from '../helpers/settings';
 
@@ -19,6 +20,8 @@ export interface DiagnosticsResponse {
   counters: {
     convertFailures: number;
     rateLimited: ProviderId[];
+    /** Consecutive failures per `provider.operation` — empty when every provider is healthy. */
+    providerFailures: Record<string, number>;
   };
   settings: Record<string, string>;
   recentEvents: RecentEvent[];
@@ -39,7 +42,11 @@ router.get('/', (_req, res) => {
     appVersion: process.env.APP_VERSION ?? '0.0.0-dev',
     now: new Date().toISOString(),
     logFilePath: getLogFilePath(),
-    counters: { convertFailures: lastConvertFailures(), rateLimited: getActiveLimited() },
+    counters: {
+      convertFailures: lastConvertFailures(),
+      rateLimited: getActiveLimited(),
+      providerFailures: getProviderFailures(),
+    },
     settings,
     recentEvents: getRecentEvents(),
   };

@@ -31,6 +31,8 @@ backend/src/
       frankfurterFx.ts     — ECB-backed FX provider (no key, no rate limit)
       yahooFx.ts           — Yahoo FX provider (fallback)
       yahooPrice.ts        — Yahoo stock-price provider (default)
+      chartQuote.ts        — live quote via the crumb-free /v8/chart endpoint (quote() fallback)
+    providerHealth.ts    — consecutive-failure tracker per provider+operation; escalates a streak to logger.error (→ Sentry) and feeds /api/diagnostics
     marketData.ts        — quote + historical with daily_prices cache + forward-fill (uses priceProvider)
     fxService.ts         — convert/getRate/warmHistoricalRates with fx_rates cache + forward-fill (uses fxProvider)
     positionsCalc.ts     — FIFO walker (BUY → open lots, SELL → realized lots), per-ticker metrics
@@ -129,10 +131,10 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `net_invested` mirrors portfolioHistory's cash-flow formula: BUY reduces cash by `shares*price+fees`, SELL increases it by `shares*price−fees` (each converted at `trade_date`).
 - A BUY automatically lowers cash, a SELL raises it — no separate per-trade cash record.
 - Cash can still go **negative via trades** (you can buy more than you hold), but each side guards it:
-  - **Trades** — a trade change that lowers cash into the negative (a BUY, or **deleting a SELL** which removes its proceeds) triggers a *soft confirm*: `POST/PUT/DELETE /api/trades` returns `409 { code: 'CASH_OVERDRAW' }` unless the request carries `?confirm=1`. The trade-form/list catches the 409, asks the user (custom Bootstrap modal), and retries with `?confirm=1`. Adding a SELL or deleting a BUY (both raise cash) never trip it.
-  - **Cash ledger** — a withdrawal (or shrinking/deleting a deposit) that would overdraw is *hard-blocked* with `400` on `POST/PUT/DELETE /api/cash`; no bypass. You can't withdraw cash you don't have.
+  - **Trades** — a trade change that lowers cash into the negative (a BUY, or **deleting a SELL** which removes its proceeds) triggers a _soft confirm_: `POST/PUT/DELETE /api/trades` returns `409 { code: 'CASH_OVERDRAW' }` unless the request carries `?confirm=1`. The trade-form/list catches the 409, asks the user (custom Bootstrap modal), and retries with `?confirm=1`. Adding a SELL or deleting a BUY (both raise cash) never trip it.
+  - **Cash ledger** — a withdrawal (or shrinking/deleting a deposit) that would overdraw is _hard-blocked_ with `400` on `POST/PUT/DELETE /api/cash`; no bypass. You can't withdraw cash you don't have.
   - Both reuse `overdraws()` + `projectCashAfter{Trade,CashTx}()` in cashService.ts, built on `tradeCashFlow()` / `cashTxFlow()`.
-- **Share overdraw (selling more than you own)** is separately *hard-blocked* with `400 { code: 'INSUFFICIENT_SHARES' }` on `POST/PUT/DELETE /api/trades`; no bypass (`?confirm=1` does not apply). The route calls `findShareOverdraw()` (positionsCalc.ts) before mutating: a new/edited SELL exceeding held shares, a back-dated SELL before its covering BUY, or editing/deleting a BUY that leaves later SELLs uncovered all trip it. The check is chronological (re-simulates the FIFO walk), independent of the cash guard, and runs first. The trade-form fetches `/api/positions/holdings` to show "Je bezit X aandelen" and disables submit before you hit the 400.
+- **Share overdraw (selling more than you own)** is separately _hard-blocked_ with `400 { code: 'INSUFFICIENT_SHARES' }` on `POST/PUT/DELETE /api/trades`; no bypass (`?confirm=1` does not apply). The route calls `findShareOverdraw()` (positionsCalc.ts) before mutating: a new/edited SELL exceeding held shares, a back-dated SELL before its covering BUY, or editing/deleting a BUY that leaves later SELLs uncovered all trip it. The check is chronological (re-simulates the FIFO walk), independent of the cash guard, and runs first. The trade-form fetches `/api/positions/holdings` to show "Je bezit X aandelen" and disables submit before you hit the 400.
 - The positions route folds the summary into `PortfolioTotals` (`cash_balance`, `net_worth`, `cash_pct`, `invested_pct`) so the dashboard stays one API call.
 
 ### Stock price caching (marketData.ts + daily_prices)
@@ -140,6 +142,14 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `fetchHistorical(sym, from, to)` reads from `daily_prices` first; only hits the provider on cache miss / when `to >= today`.
 - After a provider call, missing days in the range are forward-filled from the previous trading day's close.
 - After warming, repeated portfolio history calls are nearly free (no provider calls).
+- **No false freshness**: a quote can come back *without* a price (delisted, halted, a fund quoting NAV only). Since `upsertTicker` COALESCEs nulls, stamping `last_price_at` anyway would keep the old price while making it look freshly fetched — frozen but indistinguishable from live, and not retried within the TTL. `fetchQuote` therefore only refreshes the timestamp when a real price arrives, and warns otherwise. `PositionMetrics.price_as_of` surfaces that timestamp so the positions table can flag a stale price (warning icon after 15 min; the server-side TTL is 5 min, so anything older means the fetch failed).
+
+### Yahoo's crumb and the chart fallback (chartQuote.ts)
+
+- Yahoo's `/v7/finance/quote` requires a **crumb** token, and yahoo-finance2 can only obtain one by walking Yahoo's EU cookie-consent flow with a hard-coded sequence of expected redirects. When Yahoo answers that flow differently — bouncing straight back to the quote page with `?guccounter=1` instead of `collectConsent` — the library throws `Unexpected redirect to …` and **every quote fails indefinitely** on that machine. Seen in production for 6+ weeks; known upstream (gadicc/yahoo-finance2 #695, #777, #977).
+- **Version-independent**: `modules/quote.js` and `lib/cookieJar.js` are byte-identical across 3.15.2 / 3.15.4 / 4.0.0, and the throwing branch in `lib/getCrumb.js` is unchanged. Upgrading does not fix it.
+- `/v8/finance/chart` needs **no crumb**, and its `meta` carries the same live price, currency, name, exchange and instrument type. So `yahooPrice.fetchQuote` (and `yahooFx.fetchRate` for today) fall back to `fetchQuoteViaChart()` whenever `quote()` throws or returns no price.
+- Because that failure is now *handled*, `quote()` errors log at **debug** level (they'd otherwise flood the log once per symbol per refresh); the streak is what escalates. `providerHealth` tracks `yahoo.quote` separately from `yahoo.fetchQuote`, so diagnostics distinguishes "the endpoint is degraded but the fallback carries it" from "the position genuinely has no price".
 
 ### Belgian tax (taxCalc.ts)
 
@@ -158,7 +168,8 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 
 - **Central logger** (`helpers/logger.ts`) is the single choke point. Every `logger.{debug,info,warn,error}(component, msg)` fans out to: (1) the console (unchanged `[component] message` lines), (2) a size-rotated file at `${LOG_DIR}/app.log` (2 MB × 3 files; env `LOG_DIR`, dev fallback `backend/logs/`, prod `${userData}/logs/`), (3) an in-memory ring buffer (last 500 events, mirrors `rateLimitMonitor.ts`), (4) a pluggable remote sink. Logging is best-effort — file/sink errors are swallowed so it can never crash a request. `LOG_DIR` is resolved fresh per write.
 - All previously-swallowed provider/FX warnings (`yahooPrice`, `yahooFx`, `frankfurter`, `fx`), the FIFO/tax warnings, the startup banners (`db`, `schema`, `server`, `history`), and the global error handler now route through the logger — so a packaged build leaves a retrievable trace where before there was none.
-- **`GET /api/diagnostics`** serves the ring buffer + app version + whitelisted settings (`SAFE_SETTING_KEYS`) + log-file path + counters (`convertFailures`, `rateLimited`). Local-only (127.0.0.1, single-user) → intentionally **not** scrubbed.
+- **`GET /api/diagnostics`** serves the ring buffer + app version + whitelisted settings (`SAFE_SETTING_KEYS`) + log-file path + counters (`convertFailures`, `rateLimited`, `providerFailures`). Local-only (127.0.0.1, single-user) → intentionally **not** scrubbed.
+- **Repeated provider failures escalate** (`services/providerHealth.ts`). A `logger.warn` only becomes a Sentry *breadcrumb*, and breadcrumbs only travel alongside a captured error — so a provider that failed silently for weeks produced **no remote signal at all** (the first report came from a user, not the app). `recordFailure(provider, operation, message)` counts consecutive failures and logs once at **error** level after `ESCALATE_AFTER` (3) in a row; `recordSuccess` clears the streak and re-arms it. Counters are per provider *and* operation, because during the crumb outage `quote()` was dead while `chart()` was fine. Frankfurter 404s are deliberately **not** counted: they mean "the ECB doesn't publish this pair" (TWD, KRW) and the composite provider's Yahoo fallback is the designed path.
 - **Remote = Sentry** (`@sentry/electron`, OpenTelemetry-based v10 SDK under the hood). The backend never imports Electron/Sentry: `electron/main.ts` calls `Sentry.init` (before the backend `require`, so require-time throws are caught) then injects a sink via the re-exported `setRemoteSink`. The sink maps warn/info/debug → breadcrumbs and `error` → `captureException`/`captureMessage`. Renderer errors are caught by a minimal `@sentry/electron/renderer` init in `frontend/src/main.ts` (inherits DSN/config from main over IPC).
 - **Privacy = cloud + scrub**: `sendDefaultPii:false` + `beforeSend`/`beforeSendLog` drop request bodies/query strings and redact paths/amounts/numbers/tickers (`scrubText` in `electron/sentry.ts`). The local file + `/api/diagnostics` stay unscrubbed by design.
 - **DSN config**: Sentry is **DSN-gated** — set `SENTRY_DSN` (env, dev) or paste the public DSN into `DEFAULT_DSN` in `electron/sentry.ts` (for packaged builds; the DSN is a public ingest key, safe to ship). With no DSN, Sentry is skipped and only the local file + `/api/diagnostics` fallback runs (dev/tests stay clean). Future option (documented, not wired): swap the SDK transport for Sentry's direct OTLP endpoints (`…/integration/otlp/v1/{traces,logs}`).
@@ -230,3 +241,7 @@ linux/win/mac builds to a GitHub Release.
 - 2-space indentation
 - Standalone components (Angular 21, standalone-by-default)
 - Templates use built-in control flow (`@if`/`@for`/`@switch`), not `*ngIf`/`*ngFor` — no `CommonModule` import needed
+
+## Git
+
+- Do not add yourself as co-author to commit messages

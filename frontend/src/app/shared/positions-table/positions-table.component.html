@@ -24,7 +24,12 @@
             </td>
             <td class="num">{{ p.shares_open | shares }}</td>
             <td class="num">{{ p.avg_cost | money: p.currency }}</td>
-            <td class="num">{{ p.current_price | money: p.currency }}</td>
+            <td class="num">
+              @if (stale().has(p.ticker)) {
+                <i class="bi bi-exclamation-triangle-fill text-warning me-1" [title]="staleLabel(p)"></i>
+              }
+              {{ p.current_price | money: p.currency }}
+            </td>
             <td class="num">{{ p.market_value_display | money: p.display_currency }}</td>
             <td class="num">{{ p.cost_basis_display | money: p.display_currency }}</td>
             <td class="num" [class]="pnlClass(p.unrealized_pnl_display)">

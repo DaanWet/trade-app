@@ -32,6 +32,8 @@ export interface PositionMetrics {
   avg_cost: number;
   cost_basis: number;
   current_price: number | null;
+  /** Wanneer current_price voor het laatst succesvol is opgehaald (ISO8601). */
+  price_as_of: string | null;
   market_value: number | null;
   unrealized_pnl: number | null;
   unrealized_pct: number | null;

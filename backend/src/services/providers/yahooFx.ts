@@ -1,7 +1,9 @@
 import { yahoo } from '../yahooClient';
 import { isRateLimitError, markLimited, markRecovered } from '../rateLimitMonitor';
+import { recordFailure, recordSuccess } from '../providerHealth';
 import { logger } from '../../helpers/logger';
 import { errorMessage } from '../../helpers/errors';
+import { fetchQuoteViaChart } from './chartQuote';
 import type { FxProvider, FxRangePoint } from './types';
 
 /**
@@ -20,9 +22,23 @@ export const yahooFxProvider: FxProvider = {
 
     try {
       if (date >= today) {
-        const r = await yahoo.quote(symbol);
+        // Same crumb caveat as yahooPrice.fetchQuote: quote() needs a crumb and chart()
+        // does not, so a broken consent handshake must not take today's FX rate with it.
+        let rate: number | null = null;
+        try {
+          const r = await yahoo.quote(symbol);
+          rate = r?.regularMarketPrice ?? null;
+        } catch (err) {
+          if (isRateLimitError(err)) markLimited('yahoo');
+          logger.debug(
+            'yahooFx',
+            `quote(${symbol}) unusable: ${errorMessage(err)} — trying chart()`,
+          );
+        }
+        if (rate == null) rate = (await fetchQuoteViaChart(symbol))?.last_price ?? null;
         markRecovered('yahoo');
-        return r?.regularMarketPrice ?? null;
+        recordSuccess('yahooFx', 'fetchRate');
+        return rate;
       }
       const target = new Date(date);
       const from = new Date(target);
@@ -31,6 +47,7 @@ export const yahooFxProvider: FxProvider = {
       to.setDate(to.getDate() + 1);
       const result = await yahoo.chart(symbol, { period1: from, period2: to, interval: '1d' });
       markRecovered('yahoo');
+      recordSuccess('yahooFx', 'fetchRate');
       const candles = (result.quotes ?? []).filter(q => q.close != null);
       if (candles.length === 0) return null;
       const onOrBefore = candles.filter(c => c.date && c.date <= target);
@@ -38,7 +55,9 @@ export const yahooFxProvider: FxProvider = {
       return (pick.close as number) ?? null;
     } catch (err) {
       if (isRateLimitError(err)) markLimited('yahoo');
-      logger.warn('yahooFx', `fetchRate ${symbol}@${date} failed: ${errorMessage(err)}`);
+      const message = errorMessage(err);
+      logger.warn('yahooFx', `fetchRate ${symbol}@${date} failed: ${message}`);
+      recordFailure('yahooFx', 'fetchRate', message);
       return null;
     }
   },
@@ -51,6 +70,7 @@ export const yahooFxProvider: FxProvider = {
     try {
       const result = await yahoo.chart(symbol, { period1: from, period2: to, interval: '1d' });
       markRecovered('yahoo');
+      recordSuccess('yahooFx', 'fetchRange');
       const points: FxRangePoint[] = [];
       for (const candle of result.quotes ?? []) {
         if (candle.close != null && candle.date != null) {
@@ -60,7 +80,9 @@ export const yahooFxProvider: FxProvider = {
       return points;
     } catch (err) {
       if (isRateLimitError(err)) markLimited('yahoo');
-      logger.warn('yahooFx', `fetchRange ${symbol} failed: ${errorMessage(err)}`);
+      const message = errorMessage(err);
+      logger.warn('yahooFx', `fetchRange ${symbol} failed: ${message}`);
+      recordFailure('yahooFx', 'fetchRange', message);
       return [];
     }
   },

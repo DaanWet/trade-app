@@ -46,6 +46,20 @@ export function formatDate(iso: string | null | undefined): string {
   return new Intl.DateTimeFormat(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
 }
 
+/** Datum + tijdstip, voor momenten waarop het uur ertoe doet (bv. hoe oud een koers is). */
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat(LOCALE, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d);
+}
+
 /** Parse een door de gebruiker getypt decimaal getal; accepteert zowel ',' als
  *  '.' als decimaalteken. Geeft 0 terug bij leeg/ongeldig zodat het formulier
  *  numeriek blijft. */
