@@ -9,11 +9,7 @@
 
 @if (showForm()) {
   <div class="mb-4">
-    <app-trade-form
-      [initial]="editing()"
-      (saved)="onSaved()"
-      (cancelled)="onCancel()"
-    />
+    <app-trade-form (saved)="onSaved()" (cancelled)="onCancel()" />
   </div>
 }
 
@@ -73,7 +69,7 @@
       </thead>
       <tbody>
         @for (t of visible(); track t.id) {
-          <tr>
+          <tr [class.table-active]="editingId() === t.id">
             <td>{{ t.trade_date | d }}</td>
             <td class="fw-bold">{{ t.ticker }}</td>
             <td>
@@ -87,14 +83,28 @@
             <td class="num">{{ (t.shares * t.price + t.fees) | money: t.currency }}</td>
             <td class="text-muted small">{{ t.notes }}</td>
             <td class="num">
-              <button class="btn btn-sm btn-outline-secondary me-1" (click)="edit(t)" title="Aanpassen">
-                <i class="bi bi-pencil"></i>
+              <button
+                class="btn btn-sm me-1"
+                [class.btn-outline-secondary]="editingId() !== t.id"
+                [class.btn-secondary]="editingId() === t.id"
+                (click)="edit(t)"
+                [title]="editingId() === t.id ? 'Sluiten' : 'Aanpassen'"
+              >
+                <i class="bi" [class.bi-pencil]="editingId() !== t.id" [class.bi-x-lg]="editingId() === t.id"></i>
               </button>
               <button class="btn btn-sm btn-outline-danger" (click)="remove(t)" title="Verwijderen">
                 <i class="bi bi-trash"></i>
               </button>
             </td>
           </tr>
+          @if (editingId() === t.id) {
+            <!-- scroll-margin-top houdt de rij vrij van de sticky navbar bij revealForm(). -->
+            <tr #formAnchor style="scroll-margin-top: 5rem;">
+              <td colspan="9" class="p-2 bg-body-tertiary">
+                <app-trade-form [initial]="t" (saved)="onSaved()" (cancelled)="onCancel()" />
+              </td>
+            </tr>
+          }
         } @empty {
           <tr>
             <td colspan="9" class="text-center text-muted py-4">

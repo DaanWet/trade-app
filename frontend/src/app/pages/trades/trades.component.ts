@@ -1,4 +1,14 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  OnInit,
+  afterNextRender,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { ApiService } from '../../services/api.service';
 import { ConfirmService } from '../../shared/confirm/confirm.service';
 import { TradeFormComponent } from '../../shared/trade-form/trade-form.component';
@@ -15,11 +25,17 @@ import type { Trade, TradeSide } from '../../models';
 export class TradesComponent implements OnInit {
   private api = inject(ApiService);
   private confirm = inject(ConfirmService);
+  private injector = inject(Injector);
+
+  /** De rij met het inline formulier; bestaat alleen zolang er iets bewerkt wordt. */
+  private formAnchor = viewChild<ElementRef<HTMLElement>>('formAnchor');
 
   trades = signal<Trade[]>([]);
   loading = signal(true);
+  /** Het formulier voor een *nieuwe* trade, bovenaan de pagina. */
   showForm = signal(false);
-  editing = signal<Trade | null>(null);
+  /** De trade die inline bewerkt wordt (null = geen). */
+  editingId = signal<number | null>(null);
   error = signal<string | null>(null);
 
   // Sorteren (standaard: datum aflopend = nieuwste eerst) + filters ('' = uit).
@@ -108,13 +124,25 @@ export class TradesComponent implements OnInit {
   }
 
   newTrade(): void {
-    this.editing.set(null);
+    this.editingId.set(null);
     this.showForm.set(true);
   }
 
+  /** Bewerken gebeurt inline onder de rij zelf, zodat je je plek in een lange lijst niet
+   *  kwijtspeelt. Nog eens op de knop klikken sluit het weer. */
   edit(trade: Trade): void {
-    this.editing.set(trade);
-    this.showForm.set(true);
+    this.showForm.set(false);
+    this.editingId.update(id => (id === trade.id ? null : trade.id));
+    if (this.editingId() !== null) this.revealForm();
+  }
+
+  /** Een rij onderaan het scherm zet zijn formulier buiten beeld. `block: 'nearest'`
+   *  schuift alleen bij als het echt nodig is — staat het al in beeld, dan gebeurt er niets. */
+  private revealForm(): void {
+    afterNextRender(
+      () => this.formAnchor()?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' }),
+      { injector: this.injector },
+    );
   }
 
   async remove(trade: Trade): Promise<void> {
@@ -133,19 +161,24 @@ export class TradesComponent implements OnInit {
         question: 'Toch verwijderen?',
       })
       .subscribe({
-        next: () => this.refresh(),
+        next: () => {
+          // Anders blijft er een id staan dat SQLite aan een volgende trade kan hergebruiken,
+          // waarna die meteen open zou klappen.
+          if (this.editingId() === trade.id) this.editingId.set(null);
+          this.refresh();
+        },
         error: err => this.error.set(err?.error?.error ?? 'Verwijderen mislukt'),
       });
   }
 
   onSaved(): void {
     this.showForm.set(false);
-    this.editing.set(null);
+    this.editingId.set(null);
     this.refresh();
   }
 
   onCancel(): void {
     this.showForm.set(false);
-    this.editing.set(null);
+    this.editingId.set(null);
   }
 }

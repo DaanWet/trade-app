@@ -35,6 +35,11 @@ export class TradeFormComponent implements OnInit {
   saved = output<Trade>();
   cancelled = output<void>();
 
+  /** Bij het bewerken van een bestaande trade ligt de ticker vast: die wijzigen is in feite
+   *  een andere trade, en het formulier staat dan inline in de tabel — waar de
+   *  autocomplete-dropdown door `.table-responsive` (overflow) afgekapt zou worden. */
+  tickerLocked = computed(() => this.initial() !== null);
+
   form = signal<TradeInput>({
     ticker: '',
     trade_date: new Date().toISOString().slice(0, 10),
