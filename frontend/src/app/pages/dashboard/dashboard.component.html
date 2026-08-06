@@ -148,8 +148,25 @@
     }
   </div>
 
-  <h5>Posities</h5>
-  <app-positions-table [positions]="d.positions" />
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <h5 class="mb-0">Posities</h5>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Positiefilter">
+      @for (f of positionFilters; track f.key) {
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          [class.active]="positionFilter() === f.key"
+          (click)="positionFilter.set(f.key)"
+        >
+          {{ f.label }}
+          <span class="badge text-bg-secondary ms-1">
+            {{ f.key === 'OPEN' ? openCount() : f.key === 'CLOSED' ? closedCount() : d.positions.length }}
+          </span>
+        </button>
+      }
+    </div>
+  </div>
+  <app-positions-table [positions]="visiblePositions()" [emptyMessage]="emptyPositionsMessage()" />
 } @else if (loading()) {
   <div class="text-center py-5"><span class="spinner-border"></span></div>
 }

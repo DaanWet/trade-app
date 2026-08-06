@@ -51,9 +51,7 @@
           </tr>
         } @empty {
           <tr>
-            <td colspan="10" class="text-center text-muted py-4">
-              Nog geen posities. Voeg een trade toe om te starten.
-            </td>
+            <td colspan="10" class="text-center text-muted py-4">{{ emptyMessage() }}</td>
           </tr>
         }
       </tbody>

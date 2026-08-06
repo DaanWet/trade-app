@@ -18,6 +18,10 @@ const STALE_AFTER_MS = 15 * 60 * 1000;
 export class PositionsTableComponent {
   positions = input.required<PositionMetrics[]>();
 
+  /** Tekst bij een lege tabel — overschrijfbaar zodat een gefilterde selectie niet
+   *  als een lege portefeuille leest. */
+  emptyMessage = input('Nog geen posities. Voeg een trade toe om te starten.');
+
   readonly pnlClass = pnlClass;
 
   // Geen kolom gekozen → backend-standaardvolgorde behouden.

@@ -4,9 +4,10 @@ import { PositionsTableComponent } from '../../shared/positions-table/positions-
 import { PortfolioChartComponent } from '../../shared/price-chart/portfolio-chart.component';
 import { MoneyPipe, PercentPipe } from '../../shared/number-format/format.pipes';
 import { pnlClass } from '../../utils/format';
-import type { PositionsResponse, PortfolioPoint } from '../../models';
+import type { PositionsResponse, PortfolioPoint, PositionMetrics } from '../../models';
 
 type RangeKey = '7D' | '1M' | '1Q' | 'YTD' | '1Y' | 'MAX' | 'CUSTOM';
+type PositionFilter = 'ALL' | 'OPEN' | 'CLOSED';
 
 /** ISO start date (inclusive) for a fixed range, relative to today. */
 function rangeStart(r: Exclude<RangeKey, 'MAX' | 'CUSTOM'>): string {
@@ -66,6 +67,35 @@ export class DashboardComponent implements OnInit {
 
     const startIso = rangeStart(r);
     return all.filter(p => p.date >= startIso);
+  });
+
+  /** Positielijst-filter — de totalen-kaarten blijven altijd over de volledige portefeuille. */
+  positionFilter = signal<PositionFilter>('ALL');
+
+  readonly positionFilters: { key: PositionFilter; label: string }[] = [
+    { key: 'ALL', label: 'Alle' },
+    { key: 'OPEN', label: 'Open' },
+    { key: 'CLOSED', label: 'Gesloten' },
+  ];
+
+  openCount = computed(() => (this.data()?.positions ?? []).filter(p => p.is_open).length);
+  closedCount = computed(() => (this.data()?.positions ?? []).filter(p => !p.is_open).length);
+
+  /** Posities zoals de tabel ze toont — client-side gefilterd, geen extra API-call. */
+  visiblePositions = computed<PositionMetrics[]>(() => {
+    const rows = this.data()?.positions ?? [];
+    const f = this.positionFilter();
+    if (f === 'OPEN') return rows.filter(p => p.is_open);
+    if (f === 'CLOSED') return rows.filter(p => !p.is_open);
+    return rows;
+  });
+
+  /** Leegtekst die past bij het gekozen filter — anders lijkt een lege selectie op een lege portefeuille. */
+  emptyPositionsMessage = computed(() => {
+    const f = this.positionFilter();
+    if (f === 'OPEN') return 'Geen open posities.';
+    if (f === 'CLOSED') return 'Geen gesloten posities.';
+    return 'Nog geen posities. Voeg een trade toe om te starten.';
   });
 
   readonly pnlClass = pnlClass;
