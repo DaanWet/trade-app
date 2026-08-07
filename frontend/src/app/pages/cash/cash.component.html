@@ -13,7 +13,7 @@
 
 @if (data(); as d) {
   <div class="row g-3 mb-4">
-    <div class="col-md-4">
+    <div class="col-md-6">
       <div class="card p-3">
         <div class="text-muted small">Cash-balans</div>
         <div class="fs-3 fw-bold" [class]="pnlClass(d.summary.cash_balance)">
@@ -26,16 +26,10 @@
         }
       </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-6">
       <div class="card p-3">
         <div class="text-muted small">Netto gestort</div>
         <div class="fs-3 fw-bold">{{ d.summary.net_deposits | money: d.summary.display_currency:2 }}</div>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="card p-3">
-        <div class="text-muted small">Geïnvesteerd in aandelen</div>
-        <div class="fs-3 fw-bold">{{ d.summary.invested | money: d.summary.display_currency:2 }}</div>
       </div>
     </div>
   </div>
