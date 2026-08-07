@@ -383,3 +383,63 @@ describe("totalsOf — day P&L", () => {
     expect(totals.day_pnl_pct).toBeNull();
   });
 });
+
+describe("computeAllPositions — average buy and sell price of the sold shares", () => {
+  it("reports what a fully closed position was bought and sold at", async () => {
+    seedFreshQuote("CLOSED", 999); // irrelevant: nothing left to price
+    insertTrade({ ticker: "CLOSED", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 100, currency: "EUR", fees: 0 });
+    insertTrade({ ticker: "CLOSED", trade_date: "2026-03-01", side: "SELL", shares: 10, price: 130, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("CLOSED");
+    expect(p.avg_realized_cost).toBeCloseTo(100, 6);
+    expect(p.avg_realized_sell).toBeCloseTo(130, 6);
+    // avg_cost stays what it always was: the average of the OPEN shares, of which there are none.
+    expect(p.avg_cost).toBe(0);
+  });
+
+  it("averages across several buys and sells at different prices", async () => {
+    seedFreshQuote("MIX", 100);
+    insertTrade({ ticker: "MIX", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 100, currency: "EUR", fees: 0 });
+    insertTrade({ ticker: "MIX", trade_date: "2026-02-05", side: "BUY", shares: 10, price: 200, currency: "EUR", fees: 0 });
+    insertTrade({ ticker: "MIX", trade_date: "2026-03-01", side: "SELL", shares: 5, price: 300, currency: "EUR", fees: 0 });
+    insertTrade({ ticker: "MIX", trade_date: "2026-04-01", side: "SELL", shares: 15, price: 400, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("MIX");
+    // FIFO: the 20 sold shares are the 10 @ 100 plus the 10 @ 200 → (1000 + 2000) / 20.
+    expect(p.avg_realized_cost).toBeCloseTo(150, 6);
+    // 5 @ 300 then 15 @ 400 → (1500 + 6000) / 20.
+    expect(p.avg_realized_sell).toBeCloseTo(375, 6);
+  });
+
+  it("covers only the sold shares, leaving avg_cost about the ones still held", async () => {
+    seedFreshQuote("PART", 100);
+    insertTrade({ ticker: "PART", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 100, currency: "EUR", fees: 0 });
+    insertTrade({ ticker: "PART", trade_date: "2026-02-05", side: "BUY", shares: 10, price: 300, currency: "EUR", fees: 0 });
+    insertTrade({ ticker: "PART", trade_date: "2026-03-01", side: "SELL", shares: 10, price: 500, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("PART");
+    expect(p.is_open).toBe(true);
+    expect(p.avg_realized_cost).toBeCloseTo(100, 6); // FIFO sold the cheap lot
+    expect(p.avg_realized_sell).toBeCloseTo(500, 6);
+    expect(p.avg_cost).toBeCloseTo(300, 6); // the expensive lot is what is left
+  });
+
+  it("folds fees in the same direction they hit you", async () => {
+    seedFreshQuote("FEES", 100);
+    insertTrade({ ticker: "FEES", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 100, currency: "EUR", fees: 50 });
+    insertTrade({ ticker: "FEES", trade_date: "2026-03-01", side: "SELL", shares: 10, price: 130, currency: "EUR", fees: 30 });
+
+    const p = await positionFor("FEES");
+    expect(p.avg_realized_cost).toBeCloseTo(105, 6); // (1000 + 50) / 10 — buying cost more
+    expect(p.avg_realized_sell).toBeCloseTo(127, 6); // (1300 − 30) / 10 — selling yielded less
+  });
+
+  it("has neither for a position that was never sold", async () => {
+    seedFreshQuote("HELD", 100);
+    insertTrade({ ticker: "HELD", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 100, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("HELD");
+    expect(p.avg_realized_cost).toBeNull();
+    expect(p.avg_realized_sell).toBeNull();
+  });
+});

@@ -59,8 +59,23 @@ export class PositionsTableComponent {
     return `Koers van ${formatDateTime(p.price_as_of)} — verversen bij de koersenbron lukt niet`;
   }
 
-  /** Sorteerwaarde per kolom-key — elke sorteerbare kolom is een PositionMetrics-veld. */
+  /** `avg_cost` gaat over de aandelen die je nóg hebt, en is dus 0 bij een gesloten positie.
+   *  Daar toont de kolom de gemiddelde aankoopprijs van wat verkocht is — het enige dat er
+   *  voor die positie nog te zeggen valt. */
+  avgCost(p: PositionMetrics): number | null {
+    return p.is_open ? p.avg_cost : p.avg_realized_cost;
+  }
+
+  avgCostLabel(p: PositionMetrics): string {
+    return p.is_open
+      ? 'Gemiddelde aankoopprijs van de aandelen die je nog aanhoudt'
+      : 'Gemiddelde aankoopprijs van de verkochte aandelen';
+  }
+
+  /** Sorteerwaarde per kolom-key — elke sorteerbare kolom is een PositionMetrics-veld,
+   *  behalve `avg_cost`: dat sorteert op wat de cel toont, niet op het onderliggende veld. */
   private posValue(p: PositionMetrics, key: string): string | number | null {
+    if (key === 'avg_cost') return this.avgCost(p);
     return p[key as keyof PositionMetrics] as string | number | null;
   }
 }

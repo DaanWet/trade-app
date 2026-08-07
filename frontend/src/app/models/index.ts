@@ -33,6 +33,10 @@ export interface PositionMetrics {
   name: string | null;
   shares_open: number;
   avg_cost: number;
+  /** Wat de reeds verkochte aandelen je kostten, per aandeel. Null als er niets verkocht is. */
+  avg_realized_cost: number | null;
+  /** Wat diezelfde aandelen opbrachten, per aandeel, na verkoopkosten. */
+  avg_realized_sell: number | null;
   cost_basis: number;
   current_price: number | null;
   /** Vorige slotkoers, ook in de noteringsmunt. Null als die onbekend is. */

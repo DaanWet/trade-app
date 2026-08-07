@@ -6,6 +6,7 @@
           <th class="sortable" (click)="sort.toggle('ticker')">Ticker <i class="bi {{ sort.icon('ticker') }}"></i></th>
           <th class="num sortable" (click)="sort.toggle('shares_open')">Aandelen <i class="bi {{ sort.icon('shares_open') }}"></i></th>
           <th class="num sortable" (click)="sort.toggle('avg_cost')">Avg cost <i class="bi {{ sort.icon('avg_cost') }}"></i></th>
+          <th class="num sortable" (click)="sort.toggle('avg_realized_sell')">Avg sell <i class="bi {{ sort.icon('avg_realized_sell') }}"></i></th>
           <th class="num sortable" (click)="sort.toggle('current_price')">Huidige prijs <i class="bi {{ sort.icon('current_price') }}"></i></th>
           <th class="num sortable" (click)="sort.toggle('market_value_display')">Waarde <i class="bi {{ sort.icon('market_value_display') }}"></i></th>
           <th class="num sortable" (click)="sort.toggle('cost_basis_display')">Cost basis <i class="bi {{ sort.icon('cost_basis_display') }}"></i></th>
@@ -23,7 +24,8 @@
               <div class="small text-muted">{{ p.name || '—' }}</div>
             </td>
             <td class="num">{{ p.shares_open | shares }}</td>
-            <td class="num">{{ p.avg_cost | money: p.currency }}</td>
+            <td class="num" [title]="avgCostLabel(p)">{{ avgCost(p) | money: p.currency }}</td>
+            <td class="num">{{ p.avg_realized_sell | money: p.currency }}</td>
             <td class="num">
               @if (stale().has(p.ticker)) {
                 <i class="bi bi-exclamation-triangle-fill text-warning me-1" [title]="staleLabel(p)"></i>
@@ -51,7 +53,7 @@
           </tr>
         } @empty {
           <tr>
-            <td colspan="10" class="text-center text-muted py-4">{{ emptyMessage() }}</td>
+            <td colspan="11" class="text-center text-muted py-4">{{ emptyMessage() }}</td>
           </tr>
         }
       </tbody>

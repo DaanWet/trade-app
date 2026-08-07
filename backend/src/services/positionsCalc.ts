@@ -56,6 +56,12 @@ export interface PositionMetrics {
   quote_currency: string;      // currency the live quote is denominated in
   shares_open: number;
   avg_cost: number;            // weighted-average cost per share of remaining open shares
+  /** What the shares you already sold cost you, per share (fees folded in, like avg_cost).
+   *  Null when nothing was ever sold. Says nothing about the shares still held — for a
+   *  partly-sold position avg_cost and this one describe different shares. */
+  avg_realized_cost: number | null;
+  /** What those same shares fetched, per share, net of the sell fee. */
+  avg_realized_sell: number | null;
   cost_basis: number;          // shares_open * avg_cost (open lots cost)
   current_price: number | null; // in quote_currency, NOT in currency
   previous_close: number | null; // previous session's close, also in quote_currency
@@ -335,6 +341,16 @@ async function metricsFromState(
   const unrealized = marketValue != null ? marketValue - costBasis : null;
   const unrealizedPct = unrealized != null && costBasis > 0 ? (unrealized / costBasis) * 100 : null;
   const realized = state.realized.reduce((s, r) => s + r.realized_pnl, 0);
+
+  // Averages over the shares that were actually sold. Weighted by shares, so a big lot
+  // counts more than a small one — averaging the lots' own averages would not.
+  const realizedShares = state.realized.reduce((s, r) => s + r.shares, 0);
+  const avgRealizedCost =
+    realizedShares > 0
+      ? state.realized.reduce((s, r) => s + r.cost_basis, 0) / realizedShares
+      : null;
+  const avgRealizedSell =
+    realizedShares > 0 ? state.realized.reduce((s, r) => s + r.proceeds, 0) / realizedShares : null;
   const isOpen = sharesOpen > OPEN_SHARES_EPSILON;
   // A closed position (no open shares) has no unrealized component, so its total P&L
   // is simply its realized P&L. An open position with no available quote leaves the
@@ -399,6 +415,8 @@ async function metricsFromState(
     quote_currency: quoteCurrency,
     shares_open: sharesOpen,
     avg_cost: avgCost,
+    avg_realized_cost: avgRealizedCost,
+    avg_realized_sell: avgRealizedSell,
     cost_basis: costBasis,
     current_price: currentPrice,
     previous_close: previousClose,
