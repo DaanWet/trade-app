@@ -9,6 +9,7 @@ import {
   walkTrades,
   sharesHeld,
   findShareOverdraw,
+  totalsOf,
 } from "./positionsCalc";
 
 /** Build a TradeRow with sensible defaults; override what the test cares about. */
@@ -272,5 +273,113 @@ describe("computeAllPositions — trade currency differs from quote currency", (
     const p = await positionFor("NOCUR");
     expect(p.quote_currency).toBe("EUR");
     expect(p.market_value_display).toBeCloseTo(1500, 6);
+  });
+});
+
+describe("computeAllPositions — day P&L", () => {
+  const today = new Date().toISOString().slice(0, 10);
+
+  /** Quote with a previous close, fresh enough to skip the provider. */
+  function seedQuoteWithPrevious(
+    symbol: string,
+    last_price: number | null,
+    previous_close: number | null,
+    currency = "EUR",
+  ) {
+    upsertTicker({
+      symbol,
+      name: symbol,
+      currency,
+      last_price,
+      previous_close,
+      last_price_at: new Date().toISOString(),
+    });
+  }
+
+  it("values the move since the previous close on the shares currently held", async () => {
+    seedQuoteWithPrevious("AAPL", 110, 100);
+    insertTrade({ ticker: "AAPL", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 80, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("AAPL");
+    expect(p.previous_close).toBe(100);
+    expect(p.day_pnl_display).toBeCloseTo(100, 6); // 10 × (110 − 100)
+    expect(p.day_pnl_pct).toBeCloseTo(10, 6);      // the price moved 10%, not the position's P&L
+  });
+
+  it("converts from the quote currency, not the trade currency", async () => {
+    upsertFxRate({ base: "USD", quote: "EUR", rate_date: today, rate: 0.9 });
+    upsertFxRate({ base: "USD", quote: "EUR", rate_date: "2026-01-05", rate: 0.9 });
+    seedQuoteWithPrevious("NVDA", 110, 100, "USD");
+    // Booked in EUR, quoted in USD: the $100 day move is worth €90.
+    insertTrade({ ticker: "NVDA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 80, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("NVDA");
+    expect(p.day_pnl_display).toBeCloseTo(90, 6);
+    expect(p.day_pnl_pct).toBeCloseTo(10, 6); // a percentage is currency-free
+  });
+
+  it("reports an unknown day P&L as null rather than zero", async () => {
+    seedQuoteWithPrevious("NOPREV", 110, null);
+    insertTrade({ ticker: "NOPREV", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 80, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("NOPREV");
+    expect(p.previous_close).toBeNull();
+    expect(p.day_pnl_display).toBeNull();
+    expect(p.day_pnl_pct).toBeNull();
+  });
+
+  it("gives a closed position no day P&L — there are no shares left to move", async () => {
+    seedQuoteWithPrevious("CLOSED", 110, 100);
+    insertTrade({ ticker: "CLOSED", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 80, currency: "EUR", fees: 0 });
+    insertTrade({ ticker: "CLOSED", trade_date: "2026-02-05", side: "SELL", shares: 10, price: 120, currency: "EUR", fees: 0 });
+
+    const p = await positionFor("CLOSED");
+    expect(p.is_open).toBe(false);
+    expect(p.day_pnl_display).toBeNull();
+  });
+});
+
+describe("totalsOf — day P&L", () => {
+  function seedQuoteWithPrevious(symbol: string, last_price: number, previous_close: number | null) {
+    upsertTicker({
+      symbol,
+      name: symbol,
+      currency: "EUR",
+      last_price,
+      previous_close,
+      last_price_at: new Date().toISOString(),
+    });
+  }
+
+  it("sums the priced positions and states the move as a percentage of yesterday's value", async () => {
+    seedQuoteWithPrevious("AAA", 110, 100); // 10 × +10 = +100, yesterday worth 1000
+    seedQuoteWithPrevious("BBB", 90, 100);  // 10 × −10 = −100, yesterday worth 1000
+    insertTrade({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR", fees: 0 });
+    insertTrade({ ticker: "BBB", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR", fees: 0 });
+
+    const totals = totalsOf(await computeAllPositions());
+    expect(totals.day_pnl).toBeCloseTo(0, 6);
+    expect(totals.day_pnl_pct).toBeCloseTo(0, 6);
+    expect(totals.day_pnl_partial).toBe(false);
+  });
+
+  it("flags the total as partial when an open position has no previous close", async () => {
+    seedQuoteWithPrevious("AAA", 110, 100);
+    seedQuoteWithPrevious("BBB", 90, null);
+    insertTrade({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR", fees: 0 });
+    insertTrade({ ticker: "BBB", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR", fees: 0 });
+
+    const totals = totalsOf(await computeAllPositions());
+    expect(totals.day_pnl).toBeCloseTo(100, 6); // only what could be priced
+    expect(totals.day_pnl_partial).toBe(true);
+  });
+
+  it("reports no day P&L at all when nothing could be priced", async () => {
+    seedQuoteWithPrevious("AAA", 110, null);
+    insertTrade({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 10, price: 50, currency: "EUR", fees: 0 });
+
+    const totals = totalsOf(await computeAllPositions());
+    expect(totals.day_pnl).toBeNull();
+    expect(totals.day_pnl_pct).toBeNull();
   });
 });

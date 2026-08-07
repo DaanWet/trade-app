@@ -1,6 +1,10 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2 class="mb-0">Dashboard</h2>
-  <button class="btn btn-outline-secondary btn-sm" (click)="refresh(); loadHistory()" [disabled]="loading()">
+  <button
+    class="btn btn-outline-secondary btn-sm"
+    (click)="refresh(); loadHistory()"
+    [disabled]="loading()"
+  >
     <i class="bi bi-arrow-clockwise me-1"></i>Vernieuwen
   </button>
 </div>
@@ -14,23 +18,48 @@
     <div class="col">
       <div class="card p-3 h-100">
         <div class="text-muted small">Marktwaarde</div>
-        <div class="fs-3 fw-bold">{{ d.totals.market_value | money: d.totals.display_currency:2 }}</div>
+        <div class="fs-3 fw-bold">
+          {{ d.totals.market_value | money: d.totals.display_currency : 2 }}
+        </div>
       </div>
     </div>
     <div class="col">
       <div class="card p-3 h-100">
-        <div class="text-muted small">Geïnvesteerd</div>
-        <div class="fs-3 fw-bold">{{ d.totals.cost_basis | money: d.totals.display_currency:2 }}</div>
+        <div class="text-muted small">
+          Day P&L
+          @if (d.totals.day_pnl_partial) {
+            <i
+              class="bi bi-exclamation-triangle-fill text-warning ms-1"
+              title="Van minstens één positie is de vorige slotkoers onbekend; die telt niet mee."
+            ></i>
+          }
+        </div>
+        @if (d.totals.day_pnl === null) {
+          <div class="fs-3 fw-bold text-muted">—</div>
+          <div class="small text-muted">Geen vorige slotkoers</div>
+        } @else {
+          <div class="fs-3 fw-bold" [class]="pnlClass(d.totals.day_pnl)">
+            {{ d.totals.day_pnl | money: d.totals.display_currency : 2 }}
+          </div>
+          <div class="small" [class]="pnlClass(d.totals.day_pnl_pct)">
+            {{ d.totals.day_pnl_pct | pct }}
+          </div>
+        }
       </div>
     </div>
     <div class="col">
       <div class="card p-3 h-100">
         <div class="text-muted small">Cash</div>
-        <div class="fs-3 fw-bold" [class.text-danger]="d.totals.cash_balance < 0">
-          {{ d.totals.cash_balance | money: d.totals.display_currency:2 }}
+        <div
+          class="fs-3 fw-bold"
+          [class.text-danger]="d.totals.cash_balance < 0"
+        >
+          {{ d.totals.cash_balance | money: d.totals.display_currency : 2 }}
         </div>
         @if (d.totals.cash_balance < 0) {
-          <div class="small text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Negatieve cash</div>
+          <div class="small text-danger">
+            <i class="bi bi-exclamation-triangle me-1"></i>Negatieve cash
+          </div>
         }
       </div>
     </div>
@@ -38,7 +67,7 @@
       <div class="card p-3 h-100">
         <div class="text-muted small">Unrealized</div>
         <div class="fs-3 fw-bold" [class]="pnlClass(d.totals.unrealized_pnl)">
-          {{ d.totals.unrealized_pnl | money: d.totals.display_currency:2 }}
+          {{ d.totals.unrealized_pnl | money: d.totals.display_currency : 2 }}
         </div>
         <div class="small" [class]="pnlClass(d.totals.unrealized_pct)">
           {{ d.totals.unrealized_pct | pct }}
@@ -49,7 +78,7 @@
       <div class="card p-3 h-100">
         <div class="text-muted small">Realized</div>
         <div class="fs-3 fw-bold" [class]="pnlClass(d.totals.realized_pnl)">
-          {{ d.totals.realized_pnl | money: d.totals.display_currency:2 }}
+          {{ d.totals.realized_pnl | money: d.totals.display_currency : 2 }}
         </div>
       </div>
     </div>
@@ -58,19 +87,37 @@
   <div class="card p-3 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h5 class="mb-0">Allocatie</h5>
-      <span class="text-muted small">Netto waarde: {{ d.totals.net_worth | money: d.totals.display_currency:2 }}</span>
+      <span class="text-muted small"
+        >Netto waarde:
+        {{ d.totals.net_worth | money: d.totals.display_currency : 2 }}</span
+      >
     </div>
-    <div class="progress" role="progressbar" style="height: 1.5rem;">
-      <div class="progress-bar bg-primary" [style.width.%]="d.totals.invested_pct">Aandelen</div>
-      <div class="progress-bar bg-success" [style.width.%]="d.totals.cash_pct">Cash</div>
+    <div class="progress" role="progressbar" style="height: 1.5rem">
+      <div
+        class="progress-bar bg-primary"
+        [style.width.%]="d.totals.invested_pct"
+      >
+        Aandelen
+      </div>
+      <div class="progress-bar bg-success" [style.width.%]="d.totals.cash_pct">
+        Cash
+      </div>
     </div>
     <div class="d-flex justify-content-between small mt-2">
-      <span class="text-primary"><i class="bi bi-square-fill me-1"></i>Aandelen {{ d.totals.invested_pct | pct }}</span>
-      <span class="text-success"><i class="bi bi-square-fill me-1"></i>Cash {{ d.totals.cash_pct | pct }}</span>
+      <span class="text-primary"
+        ><i class="bi bi-square-fill me-1"></i>Aandelen
+        {{ d.totals.invested_pct | pct }}</span
+      >
+      <span class="text-success"
+        ><i class="bi bi-square-fill me-1"></i>Cash
+        {{ d.totals.cash_pct | pct }}</span
+      >
     </div>
     @if (d.totals.cash_balance < 0) {
       <div class="small text-danger mt-2">
-        <i class="bi bi-exclamation-triangle me-1"></i>Negatieve cash ({{ d.totals.cash_balance | money: d.totals.display_currency:2 }}) — niet in de balk opgenomen.
+        <i class="bi bi-exclamation-triangle me-1"></i>Negatieve cash ({{
+          d.totals.cash_balance | money: d.totals.display_currency : 2
+        }}) — niet in de balk opgenomen.
       </div>
     }
   </div>
@@ -78,7 +125,11 @@
   <div class="card p-3 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h5 class="mb-0">Portfolio waarde</h5>
-      <button class="btn btn-sm btn-outline-secondary" (click)="loadHistory()" [disabled]="loadingHistory()">
+      <button
+        class="btn btn-sm btn-outline-secondary"
+        (click)="loadHistory()"
+        [disabled]="loadingHistory()"
+      >
         <i class="bi bi-arrow-clockwise me-1"></i>Vernieuwen
       </button>
     </div>
@@ -88,7 +139,11 @@
       <div class="text-muted small">Geen geschiedenis beschikbaar.</div>
     } @else {
       <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-        <div class="btn-group btn-group-sm" role="group" aria-label="Tijdsbereik">
+        <div
+          class="btn-group btn-group-sm"
+          role="group"
+          aria-label="Tijdsbereik"
+        >
           @for (r of ranges; track r.key) {
             <button
               type="button"
@@ -100,11 +155,11 @@
             </button>
           }
         </div>
-        @if (range() === 'CUSTOM') {
+        @if (range() === "CUSTOM") {
           <input
             type="date"
             class="form-control form-control-sm"
-            style="width: auto;"
+            style="width: auto"
             [value]="customFrom()"
             (change)="customFrom.set($any($event.target).value)"
           />
@@ -112,12 +167,16 @@
           <input
             type="date"
             class="form-control form-control-sm"
-            style="width: auto;"
+            style="width: auto"
             [value]="customTo()"
             (change)="customTo.set($any($event.target).value)"
           />
         }
-        <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Weergave">
+        <div
+          class="btn-group btn-group-sm ms-auto"
+          role="group"
+          aria-label="Weergave"
+        >
           <button
             type="button"
             class="btn btn-outline-secondary"
@@ -148,7 +207,9 @@
     }
   </div>
 
-  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <div
+    class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2"
+  >
     <h5 class="mb-0">Posities</h5>
     <div class="btn-group btn-group-sm" role="group" aria-label="Positiefilter">
       @for (f of positionFilters; track f.key) {
@@ -160,13 +221,22 @@
         >
           {{ f.label }}
           <span class="badge text-bg-secondary ms-1">
-            {{ f.key === 'OPEN' ? openCount() : f.key === 'CLOSED' ? closedCount() : d.positions.length }}
+            {{
+              f.key === "OPEN"
+                ? openCount()
+                : f.key === "CLOSED"
+                  ? closedCount()
+                  : d.positions.length
+            }}
           </span>
         </button>
       }
     </div>
   </div>
-  <app-positions-table [positions]="visiblePositions()" [emptyMessage]="emptyPositionsMessage()" />
+  <app-positions-table
+    [positions]="visiblePositions()"
+    [emptyMessage]="emptyPositionsMessage()"
+  />
 } @else if (loading()) {
   <div class="text-center py-5"><span class="spinner-border"></span></div>
 }

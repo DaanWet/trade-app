@@ -38,6 +38,7 @@ describe("fetchQuote cache freshness", () => {
       name: "NVIDIA",
       currency: "USD",
       last_price: 208.25,
+      previous_close: null,
       exchange: "NasdaqGS",
       quote_type: "EQUITY",
     });
@@ -55,6 +56,7 @@ describe("fetchQuote cache freshness", () => {
       name: "Some Fund",
       currency: "USD",
       last_price: null,
+      previous_close: null,
       exchange: null,
       quote_type: "MUTUALFUND",
     });
@@ -85,6 +87,7 @@ describe("fetchQuote cache freshness", () => {
       name: "New Listing",
       currency: "EUR",
       last_price: null,
+      previous_close: null,
       exchange: "Amsterdam",
       quote_type: "EQUITY",
     });
@@ -96,5 +99,46 @@ describe("fetchQuote cache freshness", () => {
     expect(row?.currency).toBe("EUR");
     // No price yet → not fresh → the next call retries instead of trusting the cache.
     expect(row?.last_price_at).toBeNull();
+  });
+});
+
+/**
+ * The previous close is only interpretable next to the price it arrived with. Keeping an
+ * older one when a fresh quote omits it would pair today's price with a days-old baseline
+ * and report a day move that never happened.
+ */
+describe("previous close follows the price it came with", () => {
+  it("clears a stale previous close when the new quote has a price but no baseline", async () => {
+    upsertTicker({
+      symbol: "NVDA",
+      currency: "USD",
+      last_price: 100,
+      previous_close: 95,
+      last_price_at: STALE_AT,
+    });
+    fetchQuote.mockResolvedValue({
+      symbol: "NVDA",
+      name: "NVIDIA",
+      currency: "USD",
+      last_price: 208.25,
+      previous_close: null,
+      exchange: "NasdaqGS",
+      quote_type: "EQUITY",
+    });
+
+    await fetchQuoteCached("NVDA");
+    expect(getTicker("NVDA")?.previous_close).toBeNull();
+  });
+
+  it("leaves it alone on an upsert that carries no price at all", () => {
+    upsertTicker({
+      symbol: "NVDA",
+      currency: "USD",
+      last_price: 100,
+      previous_close: 95,
+      last_price_at: STALE_AT,
+    });
+    upsertTicker({ symbol: "NVDA", name: "NVIDIA Corporation" });
+    expect(getTicker("NVDA")?.previous_close).toBe(95);
   });
 });

@@ -44,6 +44,7 @@ export const yahooPriceProvider: PriceProvider = {
           name: q.longName ?? q.shortName ?? null,
           currency: q.currency ?? null,
           last_price: q.regularMarketPrice,
+          previous_close: q.regularMarketPreviousClose ?? null,
           exchange: q.fullExchangeName ?? q.exchange ?? null,
           quote_type: q.quoteType ?? null,
         };

@@ -6,7 +6,7 @@ import { logger } from './helpers/logger';
  * To add a new migration: bump SCHEMA_VERSION and add a new block at the bottom.
  */
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export function runMigrations(db: Database): void {
   db.exec(`
@@ -101,6 +101,16 @@ export function runMigrations(db: Database): void {
       CREATE INDEX idx_cash_tx_date ON cash_transactions(tx_date);
     `);
     db.prepare(`INSERT INTO schema_version (version) VALUES (?)`).run(3);
+  }
+
+  if (current < 4) {
+    db.exec(`
+      -- Previous session's close, as reported alongside the live quote. Drives the
+      -- dashboard's day P&L. Nullable: not every quote carries one, and a missing value
+      -- must read as "unknown" rather than as a zero move.
+      ALTER TABLE tickers ADD COLUMN previous_close REAL;
+    `);
+    db.prepare(`INSERT INTO schema_version (version) VALUES (?)`).run(4);
   }
 
   logger.info('schema', `At version ${SCHEMA_VERSION}`);

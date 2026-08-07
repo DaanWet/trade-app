@@ -6,6 +6,8 @@ export interface TickerRow {
   currency: string | null;
   last_price: number | null;
   last_price_at: string | null;
+  /** Previous session's close, in the same currency as last_price. */
+  previous_close: number | null;
   exchange: string | null;
   quote_type: string | null;
 }
@@ -23,13 +25,21 @@ export function getTicker(symbol: string): TickerRow | null {
 
 export function upsertTicker(t: Partial<TickerRow> & { symbol: string }): void {
   db.prepare(`
-    INSERT INTO tickers (symbol, name, currency, last_price, last_price_at, exchange, quote_type)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tickers (symbol, name, currency, last_price, last_price_at, previous_close, exchange, quote_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(symbol) DO UPDATE SET
       name          = COALESCE(excluded.name,          tickers.name),
       currency      = COALESCE(excluded.currency,      tickers.currency),
       last_price    = COALESCE(excluded.last_price,    tickers.last_price),
       last_price_at = COALESCE(excluded.last_price_at, tickers.last_price_at),
+      -- The previous close is only meaningful next to the price it arrived with, so a
+      -- quote that carries a price overwrites it even with NULL ("we no longer know").
+      -- COALESCE-ing it would pair a fresh price with a days-old baseline and report a
+      -- day move that never happened. Partial upserts (no price) leave it alone.
+      previous_close = CASE
+        WHEN excluded.last_price IS NOT NULL THEN excluded.previous_close
+        ELSE COALESCE(excluded.previous_close, tickers.previous_close)
+      END,
       exchange      = COALESCE(excluded.exchange,      tickers.exchange),
       quote_type    = COALESCE(excluded.quote_type,    tickers.quote_type)
   `).run(
@@ -38,6 +48,7 @@ export function upsertTicker(t: Partial<TickerRow> & { symbol: string }): void {
     t.currency ?? null,
     t.last_price ?? null,
     t.last_price_at ?? null,
+    t.previous_close ?? null,
     t.exchange ?? null,
     t.quote_type ?? null,
   );

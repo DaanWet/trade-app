@@ -44,6 +44,8 @@ export interface PriceQuote {
   name: string | null;
   currency: string | null;
   last_price: number | null;
+  /** Previous session's close, in the same currency as last_price. Null when unknown. */
+  previous_close: number | null;
   exchange: string | null;
   quote_type: string | null;
 }

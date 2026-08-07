@@ -56,6 +56,7 @@ export async function fetchQuote(symbol: string, opts?: { force?: boolean }): Pr
     currency: q.currency,
     last_price: q.last_price,
     last_price_at: q.last_price != null ? new Date().toISOString() : null,
+    previous_close: q.previous_close,
     exchange: q.exchange,
     quote_type: q.quote_type,
   });

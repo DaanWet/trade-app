@@ -76,12 +76,12 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 ## DB schema (kern)
 
 - **trades**: id, ticker, trade_date, side ('BUY'/'SELL'), shares, price, currency, fees, notes, created_at
-- **tickers** (cache): symbol PK, name, currency, last_price, last_price_at, exchange, quote_type. 5-min TTL on live quotes.
+- **tickers** (cache): symbol PK, name, currency, last_price, last_price_at, previous_close, exchange, quote_type. 5-min TTL on live quotes.
 - **fx_rates** (cache): (base, quote, rate_date) PK, rate. Forward-filled across non-trading days; past dates immutable.
 - **daily_prices** (cache): (symbol, price_date) PK, close. Forward-filled across non-trading days; past dates immutable.
 - **cash_transactions**: id, type ('DEPOSIT'/'WITHDRAWAL'), amount (>0), currency, tx_date, notes, created_at
 - **settings**: key-value (display_currency default 'EUR')
-- **schema_version**: tracks applied migrations (current: 3)
+- **schema_version**: tracks applied migrations (current: 4)
 
 ## API endpoints
 
@@ -170,6 +170,26 @@ provider is in the quote currency** — never assume it matches the trade. Rules
 - After a provider call, missing days in the range are forward-filled from the previous trading day's close.
 - After warming, repeated portfolio history calls are nearly free (no provider calls).
 - **No false freshness**: a quote can come back *without* a price (delisted, halted, a fund quoting NAV only). Since `upsertTicker` COALESCEs nulls, stamping `last_price_at` anyway would keep the old price while making it look freshly fetched — frozen but indistinguishable from live, and not retried within the TTL. `fetchQuote` therefore only refreshes the timestamp when a real price arrives, and warns otherwise. `PositionMetrics.price_as_of` surfaces that timestamp so the positions table can flag a stale price (warning icon after 15 min; the server-side TTL is 5 min, so anything older means the fetch failed).
+
+### Day P&L (positionsCalc.ts + tickers.previous_close)
+
+- The dashboard's "Day P&L" card is `Σ shares_open × (current_price − previous_close)` per position,
+  converted **from the quote currency** in one hop (same rule as `market_value_display`).
+- `previous_close` rides along with the live quote in `tickers`. `upsertTicker` deliberately does
+  **not** COALESCE it: a quote that carries a price overwrites it even with NULL. A previous close
+  is only interpretable next to the price it arrived with — pairing a fresh price with a days-old
+  baseline would report a day move that never happened.
+- The chart fallback derives it from the **candle before the last one** (during a session the last
+  candle is today and still moving; outside one it is the session just closed — either way its
+  predecessor is the right baseline). `meta.chartPreviousClose` is deliberately *not* used: it sits
+  before the whole requested range, a week back.
+- Unknown stays **null**, never 0 — a 0 reads as "flat today". `PortfolioTotals.day_pnl_partial`
+  flags that some open position had a market value but no baseline, so the card can say the total
+  is incomplete instead of quietly under-reporting.
+- **Known limitation**: shares bought *today* are valued from yesterday's close, so the card counts
+  a move those shares didn't make. This matches what brokers show as "day change"; a per-lot basis
+  (purchase price for same-day lots) would be more correct but has to reconcile trade vs quote
+  currency per lot.
 
 ### Yahoo's crumb and the chart fallback (chartQuote.ts)
 

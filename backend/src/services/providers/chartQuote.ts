@@ -30,17 +30,25 @@ export async function fetchQuoteViaChart(symbol: string): Promise<PriceQuote | n
   const meta = result?.meta;
   if (!meta) return null;
 
+  const closes = (result.quotes ?? []).map(q => q.close).filter((c): c is number => c != null);
   // `regularMarketPrice` is the live figure; the last candle close is the fallback for
   // instruments whose meta omits it (and matches what the history cache would show).
-  const lastClose = [...(result.quotes ?? [])].reverse().find(q => q.close != null)?.close;
-  const price = meta.regularMarketPrice ?? lastClose ?? null;
+  const price = meta.regularMarketPrice ?? closes[closes.length - 1] ?? null;
   if (price == null) return null;
+
+  // The previous session's close is the candle *before* the last one: during a session the
+  // last candle is today (still moving), and outside one it is the session just closed —
+  // both make its predecessor the right baseline for a day move. `meta.previousClose` is
+  // the fallback; `meta.chartPreviousClose` deliberately is not, as it sits before the whole
+  // requested range (a week ago here), not before the last session.
+  const previousClose = closes.length >= 2 ? closes[closes.length - 2] : (meta.previousClose ?? null);
 
   return {
     symbol: sym,
     name: meta.longName ?? meta.shortName ?? null,
     currency: meta.currency ?? null,
     last_price: price,
+    previous_close: previousClose,
     exchange: meta.fullExchangeName ?? null,
     quote_type: meta.instrumentType ?? null,
   };

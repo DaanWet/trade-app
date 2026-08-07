@@ -58,6 +58,7 @@ export interface PositionMetrics {
   avg_cost: number;            // weighted-average cost per share of remaining open shares
   cost_basis: number;          // shares_open * avg_cost (open lots cost)
   current_price: number | null; // in quote_currency, NOT in currency
+  previous_close: number | null; // previous session's close, also in quote_currency
   price_as_of: string | null;  // when current_price was last successfully fetched (ISO8601)
   market_value: number | null; // shares_open * current_price, converted to the trade currency
   unrealized_pnl: number | null;
@@ -75,6 +76,11 @@ export interface PositionMetrics {
   unrealized_pnl_display: number | null;
   realized_pnl_display: number;
   total_pnl_display: number | null;
+  /** Move since the previous close on the shares still held. Display currency; no
+   *  trade-currency twin because nothing compares it against a cost figure. */
+  day_pnl_display: number | null;
+  /** How far the price itself moved since the previous close, in percent. */
+  day_pnl_pct: number | null;
 }
 
 interface PositionState {
@@ -363,6 +369,22 @@ async function metricsFromState(
       ? await convert(marketValueQuote, quoteCurrency, displayCurrency)
       : null;
   const unrealizedDisplay = marketValueDisplay != null ? marketValueDisplay - costBasisDisplay : null;
+
+  // Day P&L: what the shares you hold *right now* did since the previous close. A closed
+  // position has none (nothing left to move), and an unknown previous close stays null
+  // rather than collapsing into a 0 that reads as "flat today".
+  const previousClose = quote?.previous_close ?? null;
+  const dayMoveQuote =
+    currentPrice != null && previousClose != null && sharesOpen > 0
+      ? sharesOpen * (currentPrice - previousClose)
+      : null;
+  // One hop from the quote currency, like market_value_display.
+  const dayPnlDisplay =
+    dayMoveQuote != null ? await convert(dayMoveQuote, quoteCurrency, displayCurrency) : null;
+  const dayPnlPct =
+    dayMoveQuote != null && previousClose !== 0 && previousClose != null && currentPrice != null
+      ? ((currentPrice - previousClose) / previousClose) * 100
+      : null;
   const totalPnlDisplay =
     unrealizedDisplay != null
       ? unrealizedDisplay + realizedDisplay
@@ -379,6 +401,7 @@ async function metricsFromState(
     avg_cost: avgCost,
     cost_basis: costBasis,
     current_price: currentPrice,
+    previous_close: previousClose,
     price_as_of: quote?.last_price_at ?? null,
     market_value: marketValue,
     unrealized_pnl: unrealized,
@@ -395,6 +418,8 @@ async function metricsFromState(
     unrealized_pnl_display: unrealizedDisplay,
     realized_pnl_display: realizedDisplay,
     total_pnl_display: totalPnlDisplay,
+    day_pnl_display: dayPnlDisplay,
+    day_pnl_pct: dayPnlPct,
   };
 }
 
@@ -419,6 +444,13 @@ export interface StockTotals {
   unrealized_pct: number;
   realized_pnl: number;
   total_pnl: number;
+  /** Today's move across the priced open positions. Null when none could be priced. */
+  day_pnl: number | null;
+  /** day_pnl as a share of what those same positions were worth at the previous close. */
+  day_pnl_pct: number | null;
+  /** True when an open position had a market value but no day P&L, so day_pnl covers
+   *  only part of the portfolio. The dashboard says so rather than quietly under-reporting. */
+  day_pnl_partial: boolean;
 }
 
 /** Cash + net-worth allocation, layered on top by the positions route via cashService. */
@@ -437,12 +469,26 @@ export function totalsOf(positions: PositionMetrics[]): StockTotals {
   // A closed position contributes only its realized P&L (its market/unrealized are null →
   // coalesced to 0 here). An unpriced open position's unknown unrealized likewise coalesces
   // to 0, so the aggregate total_pnl below is realized + whatever unrealized we could price.
+  // Day P&L aggregates only the positions that actually have one. `dayPnl` stays null
+  // until the first of them, so "nothing could be priced" never masquerades as a flat day.
+  let dayPnl: number | null = null;
+  let previousValue = 0;
+  let dayPnlPartial = false;
   for (const p of positions) {
     displayCurrency = p.display_currency;
     costBasis += p.cost_basis_display;
     marketValue += p.market_value_display ?? 0;
     unrealized += p.unrealized_pnl_display ?? 0;
     realized += p.realized_pnl_display;
+
+    if (p.day_pnl_display != null) {
+      dayPnl = (dayPnl ?? 0) + p.day_pnl_display;
+      // Yesterday's value, derived rather than re-converted, so the percentage below
+      // stays exactly consistent with the numerator.
+      previousValue += (p.market_value_display ?? 0) - p.day_pnl_display;
+    } else if (p.is_open && p.market_value_display != null) {
+      dayPnlPartial = true;
+    }
   }
   return {
     display_currency: displayCurrency,
@@ -452,6 +498,9 @@ export function totalsOf(positions: PositionMetrics[]): StockTotals {
     unrealized_pct: costBasis > 0 ? (unrealized / costBasis) * 100 : 0,
     realized_pnl: realized,
     total_pnl: unrealized + realized,
+    day_pnl: dayPnl,
+    day_pnl_pct: dayPnl != null && previousValue > 0 ? (dayPnl / previousValue) * 100 : null,
+    day_pnl_partial: dayPnlPartial,
   };
 }
 

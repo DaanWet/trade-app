@@ -35,6 +35,8 @@ export interface PositionMetrics {
   avg_cost: number;
   cost_basis: number;
   current_price: number | null;
+  /** Vorige slotkoers, ook in de noteringsmunt. Null als die onbekend is. */
+  previous_close: number | null;
   /** Wanneer current_price voor het laatst succesvol is opgehaald (ISO8601). */
   price_as_of: string | null;
   market_value: number | null;
@@ -52,6 +54,10 @@ export interface PositionMetrics {
   unrealized_pnl_display: number | null;
   realized_pnl_display: number;
   total_pnl_display: number | null;
+  /** Beweging sinds de vorige slotkoers op de aandelen die je nu aanhoudt. */
+  day_pnl_display: number | null;
+  /** Hoeveel de koers zelf sinds de vorige slotkoers bewoog, in procent. */
+  day_pnl_pct: number | null;
 }
 
 export interface PortfolioTotals {
@@ -62,6 +68,11 @@ export interface PortfolioTotals {
   unrealized_pct: number;
   realized_pnl: number;
   total_pnl: number;
+  /** Beweging van vandaag over de posities die geprijsd konden worden; null als geen enkele. */
+  day_pnl: number | null;
+  day_pnl_pct: number | null;
+  /** True als een open positie geen vorige slotkoers had — day_pnl dekt dan maar een deel. */
+  day_pnl_partial: boolean;
 
   cash_balance: number;
   net_worth: number;
