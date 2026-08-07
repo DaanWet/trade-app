@@ -4,9 +4,11 @@ import { PositionsTableComponent } from '../../shared/positions-table/positions-
 import { PortfolioChartComponent } from '../../shared/price-chart/portfolio-chart.component';
 import { MoneyPipe, PercentPipe } from '../../shared/number-format/format.pipes';
 import { pnlClass } from '../../utils/format';
+import { persistedString } from '../../utils/storage';
 import type { PositionsResponse, PortfolioPoint, PositionMetrics } from '../../models';
 
-type RangeKey = '7D' | '1M' | '1Q' | 'YTD' | '1Y' | 'MAX' | 'CUSTOM';
+const RANGE_KEYS = ['7D', '1M', '1Q', 'YTD', '1Y', 'MAX', 'CUSTOM'] as const;
+type RangeKey = (typeof RANGE_KEYS)[number];
 type PositionFilter = 'ALL' | 'OPEN' | 'CLOSED';
 
 /** ISO start date (inclusive) for a fixed range, relative to today. */
@@ -35,13 +37,14 @@ export class DashboardComponent implements OnInit {
   loadingHistory = signal(false);
   error = signal<string | null>(null);
 
-  /** Time-range filter — applied client-side on the already-fetched history. */
-  range = signal<RangeKey>('MAX');
-  customFrom = signal('');
-  customTo = signal('');
+  /** Time-range filter — applied client-side on the already-fetched history. Remembered
+   *  across visits; YTD is the starting point for a browser that has no choice stored yet. */
+  range = persistedString<RangeKey>('chart.range', 'YTD', RANGE_KEYS);
+  customFrom = persistedString<string>('chart.customFrom', '');
+  customTo = persistedString<string>('chart.customTo', '');
 
   /** Chart value mode — absolute money (€) vs. % change vs. the start of the visible range. */
-  valueMode = signal<'value' | 'percent'>('value');
+  valueMode = persistedString<'value' | 'percent'>('chart.mode', 'value', ['value', 'percent']);
 
   readonly ranges: { key: RangeKey; label: string }[] = [
     { key: '7D', label: '7D' },
