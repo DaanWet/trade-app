@@ -99,9 +99,14 @@
           </tr>
           @if (editingId() === t.id) {
             <!-- scroll-margin-top houdt de rij vrij van de sticky navbar bij revealForm(). -->
-            <tr #formAnchor style="scroll-margin-top: 5rem;">
-              <td colspan="9" class="p-2 bg-body-tertiary">
-                <app-trade-form [initial]="t" (saved)="onSaved()" (cancelled)="onCancel()" />
+            <tr #formAnchor class="trade-form-row" style="scroll-margin-top: 5rem;">
+              <td colspan="9" class="p-0">
+                <app-trade-form
+                  [initial]="t"
+                  [embedded]="true"
+                  (saved)="onSaved()"
+                  (cancelled)="onCancel()"
+                />
               </td>
             </tr>
           }

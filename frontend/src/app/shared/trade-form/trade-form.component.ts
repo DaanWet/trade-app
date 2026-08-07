@@ -32,6 +32,10 @@ export class TradeFormComponent implements OnInit {
   private confirm = inject(ConfirmService);
 
   initial = input<Trade | null>(null);
+  /** Staat het formulier al in een omhullende kaart (inline in de tabel), dan laat het zijn
+   *  eigen kaartrand en titel weg — anders krijg je een doos in een doos, en zegt de titel
+   *  iets wat de gemarkeerde rij erboven al toont. */
+  embedded = input(false);
   saved = output<Trade>();
   cancelled = output<void>();
 

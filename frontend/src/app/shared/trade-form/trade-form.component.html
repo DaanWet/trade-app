@@ -1,5 +1,7 @@
-<form (ngSubmit)="submit()" class="card p-3">
-  <h5 class="mb-3">{{ initial() ? 'Trade aanpassen' : 'Nieuwe trade' }}</h5>
+<form (ngSubmit)="submit()" class="p-3" [class.card]="!embedded()">
+  @if (!embedded()) {
+    <h5 class="mb-3">{{ initial() ? 'Trade aanpassen' : 'Nieuwe trade' }}</h5>
+  }
 
   <div class="row g-3">
     <div class="col-md-3 position-relative">

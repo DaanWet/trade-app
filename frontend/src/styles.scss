@@ -75,6 +75,16 @@ th.sortable:hover {
   color: #58a6ff;
 }
 
+/* Rij met het inline bewerkformulier. Iets donkerder dan de tabel zodat hij als
+   uitklap bij de rij erboven leest, en zonder hover-effect: er valt niets te kiezen.
+   Via de Bootstrap-variabelen, niet via background-color, want de cel-achtergrond
+   komt uit --bs-table-bg / --bs-table-hover-bg. */
+tr.trade-form-row > td {
+  --bs-table-bg: rgba(255, 255, 255, 0.025);
+  --bs-table-hover-bg: rgba(255, 255, 255, 0.025);
+  --bs-table-hover-color: inherit;
+}
+
 /* Datumkiezer-icoon zichtbaar maken op donker thema */
 input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
