@@ -2,9 +2,11 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ApiService } from '../../services/api.service';
 import { PositionsTableComponent } from '../../shared/positions-table/positions-table.component';
 import { PortfolioChartComponent } from '../../shared/price-chart/portfolio-chart.component';
+import { AllocationChartComponent } from '../../shared/price-chart/allocation-chart.component';
 import { MoneyPipe, PercentPipe } from '../../shared/number-format/format.pipes';
 import { pnlClass } from '../../utils/format';
 import { persistedString } from '../../utils/storage';
+import { computeAllocation, type Allocation } from '../../utils/allocation';
 import type { PositionsResponse, PortfolioPoint, PositionMetrics } from '../../models';
 
 const RANGE_KEYS = ['7D', '1M', '1Q', 'YTD', '1Y', 'MAX', 'CUSTOM'] as const;
@@ -25,7 +27,13 @@ function rangeStart(r: Exclude<RangeKey, 'MAX' | 'CUSTOM'>): string {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [PositionsTableComponent, PortfolioChartComponent, MoneyPipe, PercentPipe],
+  imports: [
+    PositionsTableComponent,
+    PortfolioChartComponent,
+    AllocationChartComponent,
+    MoneyPipe,
+    PercentPipe,
+  ],
   templateUrl: './dashboard.component.html',
 })
 export class DashboardComponent implements OnInit {
@@ -70,6 +78,21 @@ export class DashboardComponent implements OnInit {
 
     const startIso = rangeStart(r);
     return all.filter(p => p.date >= startIso);
+  });
+
+  /** Allocatie als balk (aandelen vs. cash) of als taart per ticker; onthouden zoals de grafiek. */
+  allocationView = persistedString<'bar' | 'pie'>('allocation.view', 'bar', ['bar', 'pie']);
+  /** Telt cash als eigen taartstuk mee? Alleen relevant voor de taart. */
+  allocationCash = persistedString<'with' | 'without'>('allocation.cash', 'with', [
+    'with',
+    'without',
+  ]);
+
+  /** Taartstukken + legenda, client-side uit de posities — geen extra API-call. */
+  allocation = computed<Allocation | null>(() => {
+    const d = this.data();
+    if (!d) return null;
+    return computeAllocation(d.positions, d.totals.cash_balance, this.allocationCash() === 'with');
   });
 
   /** Positielijst-filter — de totalen-kaarten blijven altijd over de volledige portefeuille. */

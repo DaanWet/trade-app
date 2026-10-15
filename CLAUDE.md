@@ -52,15 +52,17 @@ frontend/src/app/
   models/index.ts               — TypeScript interfaces shared with API contracts
   services/api.service.ts       — all HTTP methods (one observable per endpoint)
   utils/format.ts               — formatMoney, formatNumber, formatPercent, formatShares, formatDate, parseDecimalInput, pnlClass (nl-BE locale)
+  utils/allocation.ts           — computeAllocation(): per-ticker (+ optional cash) slices for the allocation pie; validated CVD-safe color order
   shared/
     decimal-input/                 — numeric input accepting ',' or '.' (used by trade-form)
     number-format/format.pipes.ts  — MoneyPipe, NumberPipe, PercentPipe, SharesPipe, DatePipe (standalone)
     positions-table/               — reusable position grid component
     price-chart/portfolio-chart.component.ts — Chart.js line chart (market value vs invested)
+    price-chart/allocation-chart.component.ts — Chart.js doughnut (allocation per ticker; legend is an HTML table in the dashboard)
     trade-form/                    — create/edit form with ticker autocomplete (Yahoo search)
     cash-form/                     — create/edit form for cash deposits/withdrawals
   pages/
-    dashboard/    — totals cards (incl. cash) + allocation bar + portfolio chart + positions table
+    dashboard/    — totals cards (incl. cash) + allocation (bar: stocks vs cash ↔ pie: per ticker, with/without cash) + portfolio chart + positions table
     trades/       — list with edit/delete + inline form for new/edit
     cash/         — cash balance summary + deposits/withdrawals list with inline form
     tax/          — yearly tax report cards
@@ -227,6 +229,9 @@ provider is in the quote currency** — never assume it matches the trade. Rules
 - Pipes are standalone and live in `shared/number-format/format.pipes.ts`. Use them from any standalone component.
 
 ## Run locally
+
+Frontend unit tests (Karma) need a Chrome binary; puppeteer's cached one works:
+`CHROME_BIN=~/.cache/puppeteer/chrome/<version>/chrome-linux64/chrome npx ng test --watch=false --browsers=ChromeHeadless`
 
 ```bash
 # Backend (terminal 1)
