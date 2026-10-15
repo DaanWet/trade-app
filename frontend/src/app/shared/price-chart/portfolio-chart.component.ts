@@ -22,6 +22,7 @@ import {
 import 'chartjs-adapter-date-fns';
 import { nlBE } from 'date-fns/locale';
 import type { PortfolioPoint } from '../../models';
+import { timeWeightedReturns } from '../../utils/returns';
 
 Chart.register(
   LineController,
@@ -42,7 +43,10 @@ Chart.register(
 export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
   data = input.required<PortfolioPoint[]>();
   currency = input<string>('EUR');
-  /** 'value' → absolute money; 'percent' → % change vs. the first visible point of each line. */
+  /**
+   * 'value' → absolute money; 'percent' → time-weighted return since the first visible point
+   * (deposits and purchases are not counted as gains; the net-deposits line is hidden).
+   */
   mode = input<'value' | 'percent'>('value');
 
   @ViewChild('canvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
@@ -68,10 +72,17 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
   private render(points: PortfolioPoint[]): void {
     const labels = points.map(p => p.date);
     const percent = this.mode() === 'percent';
-    // In percent mode each line is rebased to its own first visible value (= 0%).
-    const total = this.series(points.map(p => p.total), percent);
-    const stocks = this.series(points.map(p => p.market_value), percent);
-    const deposits = this.series(points.map(p => p.net_deposits), percent);
+    const netDeposits = points.map(p => p.net_deposits);
+    // Net invested in stocks (buys − sells, fees included, so a buy fee shows as a small loss).
+    const invested = points.map(p => p.net_deposits - p.cash);
+    // Total: only deposits/withdrawals bring money in or out; trades just move it between
+    // cash and stocks. Stocks: money comes in or out through buying and selling.
+    const total = this.series(points.map(p => p.total), netDeposits, percent);
+    const stocks = this.series(points.map(p => p.market_value), invested, percent);
+    // Deposits have no return of their own: percent mode drops the line (and, via the legend
+    // filter below, its legend entry). An empty series rather than `hidden`, so a legend click
+    // the user made earlier can't bring it back.
+    const deposits = percent ? [] : netDeposits;
     const unit = this.timeUnit(points);
 
     if (this.chart) {
@@ -164,7 +175,13 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
           legend: {
             display: true,
             position: 'top',
-            labels: { color: '#c9d1d9', usePointStyle: true, boxWidth: 12 },
+            labels: {
+              color: '#c9d1d9',
+              usePointStyle: true,
+              boxWidth: 12,
+              // Read at every update, so toggling €/% adds or drops "Netto stortingen" (index 2).
+              filter: (item) => this.mode() !== 'percent' || item.datasetIndex !== 2,
+            },
           },
           tooltip: {
             callbacks: {
@@ -194,15 +211,16 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * In percent mode, rebase a series to its first visible value (= 0%): `(v / base - 1) * 100`.
-   * Base is the first non-zero point so e.g. net deposits that start at 0 don't divide by zero;
-   * an all-zero series stays flat at 0%. In value mode the raw numbers pass through unchanged.
+   * In percent mode, the time-weighted return since the first visible point (= 0%): each step
+   * between consecutive points is measured with the money that came in or went out taken
+   * out, so new money never shows as a gain. `cumulativeFlows` is a running total (net
+   * deposits, net invested); its step-to-step change is the flow of that period. In value
+   * mode the raw numbers pass through unchanged.
    */
-  private series(values: number[], percent: boolean): number[] {
+  private series(values: number[], cumulativeFlows: number[], percent: boolean): number[] {
     if (!percent) return values;
-    const base = values.find(v => v !== 0) ?? 0;
-    if (base === 0) return values.map(() => 0);
-    return values.map(v => (v / base - 1) * 100);
+    const flows = cumulativeFlows.map((c, i) => (i === 0 ? 0 : c - cumulativeFlows[i - 1]));
+    return timeWeightedReturns(values, flows);
   }
 
   private formatMoney(value: number, fractionDigits: number): string {

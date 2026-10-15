@@ -51,7 +51,8 @@ export class DashboardComponent implements OnInit {
   customFrom = persistedString<string>('chart.customFrom', '');
   customTo = persistedString<string>('chart.customTo', '');
 
-  /** Chart value mode — absolute money (€) vs. % change vs. the start of the visible range. */
+  /** Chart value mode — absolute money (€) vs. time-weighted return (%) since the start of the
+   *  visible range, so deposits and purchases inside the range don't count as gains. */
   valueMode = persistedString<'value' | 'percent'>('chart.mode', 'value', ['value', 'percent']);
 
   readonly ranges: { key: RangeKey; label: string }[] = [
