@@ -7,6 +7,7 @@ function pos(ticker: string, value: number | null, isOpen = true): PositionMetri
     ticker,
     currency: 'EUR',
     quote_currency: 'EUR',
+    quote_type: null,
     name: `${ticker} Inc`,
     shares_open: isOpen ? 1 : 0,
     avg_cost: 0,

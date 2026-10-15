@@ -443,3 +443,27 @@ describe("computeAllPositions — average buy and sell price of the sold shares"
     expect(p.avg_realized_sell).toBeNull();
   });
 });
+
+// Issue #4: the chart's ticker filter groups positions by instrument type.
+describe("computeAllPositions — quote type", () => {
+  it("carries the instrument type from the tickers cache", async () => {
+    upsertTicker({
+      symbol: "VWCE",
+      name: "VWCE",
+      currency: "EUR",
+      last_price: 100,
+      last_price_at: new Date().toISOString(),
+      quote_type: "ETF",
+    });
+    insertTrade({ ticker: "VWCE", trade_date: "2026-01-05", side: "BUY", shares: 1, price: 90, currency: "EUR", fees: 0 });
+
+    expect((await positionFor("VWCE")).quote_type).toBe("ETF");
+  });
+
+  it("leaves the type null when the cache doesn't know it", async () => {
+    seedFreshQuote("AAA", 10);
+    insertTrade({ ticker: "AAA", trade_date: "2026-01-05", side: "BUY", shares: 1, price: 10, currency: "EUR", fees: 0 });
+
+    expect((await positionFor("AAA")).quote_type).toBeNull();
+  });
+});

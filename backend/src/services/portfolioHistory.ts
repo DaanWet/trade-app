@@ -7,12 +7,20 @@ import { getSetting } from '../helpers/settings';
 import { SETTING_KEYS } from '../helpers/constants';
 import { logger } from '../helpers/logger';
 
+/** One ticker's share of a point, in display currency. */
+export interface TickerSlice {
+  value: number; // market value that day (0 once sold out, or when no close is known)
+  invested: number; // cumulative net trade cash flow into it (buys − sells, fees included)
+}
+
 export interface PortfolioPoint {
   date: string;
   market_value: number; // stocks only
   cash: number; // cash balance that day (net_deposits − invested)
   total: number; // market_value + cash
   net_deposits: number; // cumulative net deposits that day
+  /** Per ticker, from its first trade onwards — powers the chart's ticker filter. */
+  by_ticker: Record<string, TickerSlice>;
 }
 
 /**
@@ -23,6 +31,8 @@ export interface PortfolioPoint {
  *  - Multiply shares × close × FX rate for that day to get stock market value.
  *  - Replay cash transactions the same way to track net deposits, and derive
  *    cash = net_deposits − net_invested (mirrors cashService) and total = stocks + cash.
+ *  - Keep each ticker's value and net invested amount too (`by_ticker`), so the chart can
+ *    sum any selection of tickers client-side.
  */
 export async function buildPortfolioHistory(): Promise<PortfolioPoint[]> {
   const t0 = Date.now();
@@ -96,6 +106,7 @@ export async function buildPortfolioHistory(): Promise<PortfolioPoint[]> {
   }
 
   const shares = new Map<string, number>();
+  const investedByTicker = new Map<string, number>();
   let invested = 0;
   let netDeposits = 0;
   const out: PortfolioPoint[] = [];
@@ -109,7 +120,9 @@ export async function buildPortfolioHistory(): Promise<PortfolioPoint[]> {
     for (const t of dayTrades) {
       const sign = t.side === 'BUY' ? 1 : -1;
       shares.set(t.ticker, (shares.get(t.ticker) ?? 0) + sign * t.shares);
-      invested += await convert(tradeCashFlow(t), t.currency, displayCurrency, t.trade_date);
+      const flow = await convert(tradeCashFlow(t), t.currency, displayCurrency, t.trade_date);
+      invested += flow;
+      investedByTicker.set(t.ticker, (investedByTicker.get(t.ticker) ?? 0) + flow);
     }
 
     // Apply any cash deposits/withdrawals on this day
@@ -121,6 +134,7 @@ export async function buildPortfolioHistory(): Promise<PortfolioPoint[]> {
     // Compute market value at end-of-day (only on weekdays — Yahoo skips weekends)
     let mv = 0;
     let hasAnyPrice = false;
+    const valueByTicker = new Map<string, number>();
     for (const [ticker, qty] of shares.entries()) {
       if (qty <= 1e-9) continue;
       const closes = histories.get(ticker);
@@ -136,14 +150,29 @@ export async function buildPortfolioHistory(): Promise<PortfolioPoint[]> {
       }
       if (price != null) {
         hasAnyPrice = true;
-        mv += await convert(qty * price, tickerCurrency.get(ticker)!, displayCurrency, day);
+        const value = await convert(qty * price, tickerCurrency.get(ticker)!, displayCurrency, day);
+        mv += value;
+        valueByTicker.set(ticker, value);
       }
     }
 
     // Emit on any event day (price, trade, or cash) so the cash/total lines move too.
     if (hasAnyPrice || dayTrades.length > 0 || dayCashTxs.length > 0) {
       const cash = netDeposits - invested;
-      out.push({ date: day, market_value: mv, cash, total: mv + cash, net_deposits: netDeposits });
+      // Every ticker traded so far, sold-out ones included (value 0, invested frozen), so a
+      // selection's lines stay continuous. Σ value = mv and Σ invested = invested.
+      const byTicker: Record<string, TickerSlice> = {};
+      for (const [ticker, tickerInvested] of investedByTicker) {
+        byTicker[ticker] = { value: valueByTicker.get(ticker) ?? 0, invested: tickerInvested };
+      }
+      out.push({
+        date: day,
+        market_value: mv,
+        cash,
+        total: mv + cash,
+        net_deposits: netDeposits,
+        by_ticker: byTicker,
+      });
     }
 
     cursor.setDate(cursor.getDate() + 1);

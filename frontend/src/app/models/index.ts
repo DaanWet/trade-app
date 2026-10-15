@@ -30,6 +30,8 @@ export interface PositionMetrics {
   currency: string;
   /** Noteringsmunt: waarin de beurs het aandeel quoteert. Enkel current_price staat hierin. */
   quote_currency: string;
+  /** Soort instrument uit de ticker-cache (EQUITY, ETF, FUTURE, …). Null als onbekend. */
+  quote_type: string | null;
   name: string | null;
   shares_open: number;
   avg_cost: number;
@@ -138,12 +140,19 @@ export interface RealizedLot {
   currency: string;
 }
 
+export interface TickerSlice {
+  value: number; // marktwaarde die dag (0 na volledige verkoop of zonder koers)
+  invested: number; // netto erin gestoken tot die dag (aankopen − verkopen, kosten inbegrepen)
+}
+
 export interface PortfolioPoint {
   date: string;
   market_value: number; // stocks only
   cash: number; // cash balance that day
   total: number; // market_value + cash
   net_deposits: number; // cumulative net deposits
+  /** Per ticker vanaf zijn eerste trade — voedt het tickerfilter van de grafiek. */
+  by_ticker: Record<string, TickerSlice>;
 }
 
 export interface TickerSearchResult {

@@ -285,6 +285,13 @@
             (change)="customTo.set($any($event.target).value)"
           />
         }
+        <app-ticker-filter
+          [positions]="d.positions"
+          [groups]="tickerGroups()"
+          [selection]="chartSelection()"
+          [label]="chartSelectionLabel()"
+          (selectionChange)="setChartSelection($event)"
+        />
         <div
           class="btn-group btn-group-sm ms-auto"
           role="group"
@@ -310,11 +317,15 @@
       </div>
       @if (visibleHistory().length === 0) {
         <div class="text-muted small">Geen data in dit bereik.</div>
+      } @else if (!chartHasData()) {
+        <div class="text-muted small">Deze selectie had geen posities in dit bereik.</div>
       } @else {
         <app-portfolio-chart
           [data]="visibleHistory()"
           [currency]="d.totals.display_currency"
           [mode]="valueMode()"
+          [selection]="chartSelection()"
+          [selectionLabel]="chartSelectionLabel()"
         />
       }
     }

@@ -36,7 +36,7 @@ backend/src/
     marketData.ts        — quote + historical with daily_prices cache + forward-fill (uses priceProvider)
     fxService.ts         — convert/getRate/warmHistoricalRates with fx_rates cache + forward-fill (uses fxProvider)
     positionsCalc.ts     — FIFO walker (BUY → open lots, SELL → realized lots), per-ticker metrics
-    portfolioHistory.ts  — Daily time-series of portfolio market value vs invested
+    portfolioHistory.ts  — Daily time-series of portfolio value (stocks, cash, net deposits) + per-ticker breakdown (`by_ticker`)
     cashService.ts       — derived cash balance (net deposits − net invested), display currency
     taxCalc.ts           — Belgian "meerwaardebelasting" report (per-year, parameterizable)
   helpers/
@@ -53,16 +53,20 @@ frontend/src/app/
   services/api.service.ts       — all HTTP methods (one observable per endpoint)
   utils/format.ts               — formatMoney, formatNumber, formatPercent, formatShares, formatDate, parseDecimalInput, pnlClass (nl-BE locale)
   utils/allocation.ts           — computeAllocation(): per-ticker (+ optional cash) slices for the allocation pie; validated CVD-safe color order
+  utils/returns.ts              — timeWeightedReturns(): the chart's % mode (inflows count from the start of a period, outflows at its end)
+  utils/chart-lines.ts          — buildChartLines(): which lines the portfolio chart draws (all vs. a ticker selection, € vs. %); hasSelectionData()
+  utils/ticker-groups.ts        — ticker-filter groups (status / type / quote currency), selection label, toggle, (de)serialize
   shared/
     decimal-input/                 — numeric input accepting ',' or '.' (used by trade-form)
     number-format/format.pipes.ts  — MoneyPipe, NumberPipe, PercentPipe, SharesPipe, DatePipe (standalone)
     positions-table/               — reusable position grid component
-    price-chart/portfolio-chart.component.ts — Chart.js line chart (market value vs invested)
+    price-chart/portfolio-chart.component.ts — Chart.js line chart; draws what buildChartLines() returns (Totaal / Aandelen / Netto stortingen, or a ticker selection + Geïnvesteerd)
     price-chart/allocation-chart.component.ts — Chart.js doughnut (allocation per ticker; legend is an HTML table in the dashboard)
+    ticker-filter/                 — dropdown: group shortcuts + per-ticker checkboxes for the portfolio chart
     trade-form/                    — create/edit form with ticker autocomplete (Yahoo search)
     cash-form/                     — create/edit form for cash deposits/withdrawals
   pages/
-    dashboard/    — totals cards (incl. cash) + allocation (bar: stocks vs cash ↔ pie: per ticker, with/without cash) + portfolio chart + positions table
+    dashboard/    — totals cards (incl. cash) + allocation (bar: stocks vs cash ↔ pie: per ticker, with/without cash) + portfolio chart (ticker filter) + positions table
     trades/       — list with edit/delete + inline form for new/edit
     cash/         — cash balance summary + deposits/withdrawals list with inline form
     tax/          — yearly tax report cards
@@ -96,7 +100,7 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `GET    /api/positions` → `{ positions: PositionMetrics[], totals: PortfolioTotals }` (computes FIFO + fetches quotes)
 - `GET    /api/positions/holdings?ticker=&date=&excludeTradeId=` → `{ ticker, shares_held }` (DB-only, no quotes; powers the trade-form SELL check)
 - `GET    /api/positions/realized` — all realized FIFO lots (for tax/history)
-- `GET    /api/positions/history` — daily portfolio value time-series (uses Yahoo historical chart)
+- `GET    /api/positions/history` — daily portfolio value time-series (uses Yahoo historical chart); each point carries `by_ticker: { [ticker]: { value, invested } }` (display currency, from the ticker's first trade) for the chart's ticker filter
 - `GET    /api/prices/search?q=` — Yahoo ticker search (autocomplete)
 - `GET    /api/prices/quote/:symbol[?force=1]` — current quote (cache-first)
 - `POST   /api/prices/quotes  { symbols: [], force?: bool }` — batch quotes
@@ -192,6 +196,12 @@ provider is in the quote currency** — never assume it matches the trade. Rules
   a move those shares didn't make. This matches what brokers show as "day change"; a per-lot basis
   (purchase price for same-day lots) would be more correct but has to reconcile trade vs quote
   currency per lot.
+
+### Portfolio chart (portfolioHistory.ts + chart-lines.ts)
+
+- **% mode is time-weighted return** (`utils/returns.ts`), not a rebase on the first point: new money (a deposit for "Totaal", a buy for "Aandelen") never shows as a gain. Inflows count from the start of a period, outflows at its end — otherwise a full sell-out reads as −100 %. Money-in lines (Netto stortingen, Geïnvesteerd) are dropped in %.
+- **Ticker filter**: every history point carries `by_ticker` — per ticker its value and net invested amount (buys − sells, fees included), present from its first trade, `value` 0 and `invested` frozen after a sell-out. Invariants: `Σ value = market_value`, `Σ invested = net_deposits − cash`. The frontend sums the selection; no request per click.
+- Groups (status, type from `PositionMetrics.quote_type`, **quote** currency) are shortcuts that replace the selection. The selection is remembered in localStorage (`chart.tickers`) and only affects the chart — cards, allocation and positions table always cover the whole portfolio.
 
 ### Yahoo's crumb and the chart fallback (chartQuote.ts)
 

@@ -7,6 +7,14 @@ import { MoneyPipe, PercentPipe } from '../../shared/number-format/format.pipes'
 import { pnlClass } from '../../utils/format';
 import { persistedString } from '../../utils/storage';
 import { computeAllocation, type Allocation } from '../../utils/allocation';
+import { TickerFilterComponent } from '../../shared/ticker-filter/ticker-filter.component';
+import { hasSelectionData } from '../../utils/chart-lines';
+import {
+  buildTickerGroups,
+  parseSelection,
+  selectionLabel,
+  serializeSelection,
+} from '../../utils/ticker-groups';
 import type { PositionsResponse, PortfolioPoint, PositionMetrics } from '../../models';
 
 const RANGE_KEYS = ['7D', '1M', '1Q', 'YTD', '1Y', 'MAX', 'CUSTOM'] as const;
@@ -31,6 +39,7 @@ function rangeStart(r: Exclude<RangeKey, 'MAX' | 'CUSTOM'>): string {
     PositionsTableComponent,
     PortfolioChartComponent,
     AllocationChartComponent,
+    TickerFilterComponent,
     MoneyPipe,
     PercentPipe,
   ],
@@ -80,6 +89,27 @@ export class DashboardComponent implements OnInit {
     const startIso = rangeStart(r);
     return all.filter(p => p.date >= startIso);
   });
+
+  /** Tickerfilter van de grafiek, bewaard als 'AMD,NVDA' ('' = alle tickers). Werkt enkel op
+   *  de grafiek; kaarten, allocatie en positietabel blijven over de hele portefeuille gaan. */
+  chartTickers = persistedString<string>('chart.tickers', '');
+
+  /** Snelkeuzes (status, type, valuta) uit de posities — geen extra API-call. */
+  tickerGroups = computed(() => buildTickerGroups(this.data()?.positions ?? []));
+
+  /** De bewaarde selectie, beperkt tot tickers die nog bestaan; `null` = alle tickers. */
+  chartSelection = computed(() =>
+    parseSelection(this.chartTickers(), this.data()?.positions ?? []),
+  );
+
+  chartSelectionLabel = computed(() => selectionLabel(this.chartSelection(), this.tickerGroups()));
+
+  /** Bezat de selectie iets in het zichtbare bereik? Zo niet: een melding i.p.v. een nullijn. */
+  chartHasData = computed(() => hasSelectionData(this.visibleHistory(), this.chartSelection()));
+
+  setChartSelection(selection: string[] | null): void {
+    this.chartTickers.set(serializeSelection(selection));
+  }
 
   /** Allocatie als balk (aandelen vs. cash) of als taart per ticker; onthouden zoals de grafiek. */
   allocationView = persistedString<'bar' | 'pie'>('allocation.view', 'bar', ['bar', 'pie']);

@@ -10,6 +10,7 @@ import {
 import {
   Chart,
   ChartConfiguration,
+  ChartDataset,
   Filler,
   Legend,
   LineController,
@@ -22,7 +23,7 @@ import {
 import 'chartjs-adapter-date-fns';
 import { nlBE } from 'date-fns/locale';
 import type { PortfolioPoint } from '../../models';
-import { timeWeightedReturns } from '../../utils/returns';
+import { buildChartLines, type ChartLine, type ChartLineKey } from '../../utils/chart-lines';
 
 Chart.register(
   LineController,
@@ -35,6 +36,33 @@ Chart.register(
   Legend,
 );
 
+const VALUE_FILL: Partial<ChartDataset<'line'>> = {
+  borderColor: '#58a6ff',
+  backgroundColor: 'rgba(88, 166, 255, 0.15)',
+  fill: true,
+  tension: 0.2,
+  borderWidth: 2,
+};
+const MONEY_IN: Partial<ChartDataset<'line'>> = {
+  borderColor: '#8b949e',
+  borderDash: [4, 4],
+  fill: false,
+  tension: 0,
+  borderWidth: 1.5,
+};
+/** Style per line kind: the value line is blue and filled, money-in lines grey and dashed. */
+const LINE_STYLES: Record<ChartLineKey, Partial<ChartDataset<'line'>>> = {
+  total: VALUE_FILL,
+  selection: VALUE_FILL,
+  stocks: { borderColor: '#3fb950', fill: false, tension: 0.2, borderWidth: 1.5 },
+  deposits: MONEY_IN,
+  selectionInvested: MONEY_IN,
+};
+
+function toDataset(line: ChartLine): ChartDataset<'line'> {
+  return { ...LINE_STYLES[line.key], label: line.label, data: line.data, pointRadius: 0 };
+}
+
 @Component({
   selector: 'app-portfolio-chart',
   standalone: true,
@@ -45,18 +73,29 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
   currency = input<string>('EUR');
   /**
    * 'value' → absolute money; 'percent' → time-weighted return since the first visible point
-   * (deposits and purchases are not counted as gains; the net-deposits line is hidden).
+   * (deposits and purchases are not counted as gains; money-in lines are dropped).
    */
   mode = input<'value' | 'percent'>('value');
+  /** Ticker filter: `null` → the whole portfolio; otherwise the sum of these tickers. */
+  selection = input<string[] | null>(null);
+  /** Legend label of the selection line — the filter button's text, e.g. "ETF". */
+  selectionLabel = input<string>('');
 
   @ViewChild('canvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
-  private chart?: Chart;
+  private chart?: Chart<'line'>;
+  /** Keys of the lines currently drawn, to tell "same lines, new data" from "other lines". */
+  private lineKeys: ChartLineKey[] = [];
+  /** Lines the user hid via the legend, per kind, so the choice survives a swap of lines
+   *  (€/% drops a money-in line, the ticker filter swaps them all). */
+  private hiddenLines = new Set<ChartLineKey>();
 
   constructor() {
     effect(() => {
       const points = this.data();
-      // Read mode() so toggling €/% re-renders the existing chart.
+      // Read the other inputs so toggling €/% or the ticker filter re-renders the chart.
       this.mode();
+      this.selection();
+      this.selectionLabel();
       if (this.chart) this.render(points);
     });
   }
@@ -72,24 +111,33 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
   private render(points: PortfolioPoint[]): void {
     const labels = points.map(p => p.date);
     const percent = this.mode() === 'percent';
-    const netDeposits = points.map(p => p.net_deposits);
-    // Net invested in stocks (buys − sells, fees included, so a buy fee shows as a small loss).
-    const invested = points.map(p => p.net_deposits - p.cash);
-    // Total: only deposits/withdrawals bring money in or out; trades just move it between
-    // cash and stocks. Stocks: money comes in or out through buying and selling.
-    const total = this.series(points.map(p => p.total), netDeposits, percent);
-    const stocks = this.series(points.map(p => p.market_value), invested, percent);
-    // Deposits have no return of their own: percent mode drops the line (and, via the legend
-    // filter below, its legend entry). An empty series rather than `hidden`, so a legend click
-    // the user made earlier can't bring it back.
-    const deposits = percent ? [] : netDeposits;
+    const lines = buildChartLines(points, this.selection(), this.selectionLabel(), percent);
+    const keys = lines.map(l => l.key);
     const unit = this.timeUnit(points);
 
     if (this.chart) {
       this.chart.data.labels = labels;
-      this.chart.data.datasets[0].data = total;
-      this.chart.data.datasets[1].data = stocks;
-      this.chart.data.datasets[2].data = deposits;
+      if (keys.join('|') === this.lineKeys.join('|')) {
+        // Same lines, new data (another range, another label): patch in place so the user's
+        // legend toggles survive.
+        lines.forEach((line, i) => {
+          const dataset = this.chart!.data.datasets[i];
+          dataset.data = line.data;
+          dataset.label = line.label;
+        });
+      } else {
+        // Other lines (filter on/off, a money-in line in or out with €/%): replace them all,
+        // carrying over what the user hid in the legend.
+        this.lineKeys.forEach((key, i) => {
+          if (this.chart!.isDatasetVisible(i)) this.hiddenLines.delete(key);
+          else this.hiddenLines.add(key);
+        });
+        this.chart.data.datasets = lines.map(line => ({
+          ...toDataset(line),
+          hidden: this.hiddenLines.has(line.key),
+        }));
+      }
+      this.lineKeys = keys;
       (this.chart.options.scales!['x'] as { time: { unit: string } }).time.unit = unit;
       this.chart.update();
       return;
@@ -97,41 +145,13 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
     const ctx = this.canvasRef.nativeElement.getContext('2d');
     if (!ctx) return;
 
+    this.lineKeys = keys;
+
     const config: ChartConfiguration<'line'> = {
       type: 'line',
       data: {
         labels,
-        datasets: [
-          {
-            label: 'Totaal',
-            data: total,
-            borderColor: '#58a6ff',
-            backgroundColor: 'rgba(88, 166, 255, 0.15)',
-            fill: true,
-            tension: 0.2,
-            pointRadius: 0,
-            borderWidth: 2,
-          },
-          {
-            label: 'Aandelen',
-            data: stocks,
-            borderColor: '#3fb950',
-            fill: false,
-            tension: 0.2,
-            pointRadius: 0,
-            borderWidth: 1.5,
-          },
-          {
-            label: 'Netto stortingen',
-            data: deposits,
-            borderColor: '#8b949e',
-            borderDash: [4, 4],
-            fill: false,
-            tension: 0,
-            pointRadius: 0,
-            borderWidth: 1.5,
-          },
-        ],
+        datasets: lines.map(toDataset),
       },
       options: {
         responsive: true,
@@ -175,13 +195,7 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
           legend: {
             display: true,
             position: 'top',
-            labels: {
-              color: '#c9d1d9',
-              usePointStyle: true,
-              boxWidth: 12,
-              // Read at every update, so toggling €/% adds or drops "Netto stortingen" (index 2).
-              filter: (item) => this.mode() !== 'percent' || item.datasetIndex !== 2,
-            },
+            labels: { color: '#c9d1d9', usePointStyle: true, boxWidth: 12 },
           },
           tooltip: {
             callbacks: {
@@ -208,19 +222,6 @@ export class PortfolioChartComponent implements AfterViewInit, OnDestroy {
     if (spanDays <= 31) return 'day';
     if (spanDays <= 180) return 'week';
     return 'month';
-  }
-
-  /**
-   * In percent mode, the time-weighted return since the first visible point (= 0%): each step
-   * between consecutive points is measured with the money that came in or went out taken
-   * out, so new money never shows as a gain. `cumulativeFlows` is a running total (net
-   * deposits, net invested); its step-to-step change is the flow of that period. In value
-   * mode the raw numbers pass through unchanged.
-   */
-  private series(values: number[], cumulativeFlows: number[], percent: boolean): number[] {
-    if (!percent) return values;
-    const flows = cumulativeFlows.map((c, i) => (i === 0 ? 0 : c - cumulativeFlows[i - 1]));
-    return timeWeightedReturns(values, flows);
   }
 
   private formatMoney(value: number, fractionDigits: number): string {

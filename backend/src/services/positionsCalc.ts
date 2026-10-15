@@ -54,6 +54,7 @@ export interface PositionMetrics {
   name: string | null;
   currency: string;            // trade currency of the position
   quote_currency: string;      // currency the live quote is denominated in
+  quote_type: string | null;   // instrument type from the tickers cache (EQUITY, ETF, …); null when unknown
   shares_open: number;
   avg_cost: number;            // weighted-average cost per share of remaining open shares
   /** What the shares you already sold cost you, per share (fees folded in, like avg_cost).
@@ -413,6 +414,7 @@ async function metricsFromState(
     name: quote?.name ?? null,
     currency: state.currency,
     quote_currency: quoteCurrency,
+    quote_type: quote?.quote_type ?? null,
     shares_open: sharesOpen,
     avg_cost: avgCost,
     avg_realized_cost: avgRealizedCost,
