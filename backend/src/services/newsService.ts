@@ -2,6 +2,7 @@ import { fetchTickerNews } from './providers/yahooNews';
 import { fetchKeywordNews } from './providers/googleNews';
 import type { NewsItem } from './providers/types';
 import { recordFailure, recordSuccess } from './providerHealth';
+import { enrichPending, type EnrichOptions } from './newsPreviews';
 import { openTickerSymbols } from '../queries/trades';
 import { getTicker } from '../queries/prices';
 import { listNewsTopics, pruneArticles, saveArticles, topicKey, type TopicRef } from '../queries/news';
@@ -9,6 +10,8 @@ import { logger } from '../helpers/logger';
 import { errorMessage } from '../helpers/errors';
 import { isRateLimitError } from './rateLimitMonitor';
 import {
+  NEWS_PREVIEWS_PER_FOLLOW,
+  NEWS_PREVIEWS_PER_ROUND,
   NEWS_REFRESH_INTERVAL_MS,
   NEWS_RETENTION_DAYS,
   NEWS_RETRY_AFTER_FAILURE_MS,
@@ -18,7 +21,8 @@ import {
  * News feed orchestration (issue #11).
  *
  * Followed topics = open positions (derived, one grouped query) ∪ news_topics (watchlist + keywords). A round
- * fetches every topic sequentially, stores articles + badges, then prunes past retention.
+ * fetches every topic sequentially, stores articles + badges, fetches previews for new articles
+ * (newsPreviews.ts), then prunes past retention.
  * There is no timer: the navbar's badge poll calls maybeRefresh(), which starts a round in
  * the background when the last one is stale. The last-refresh time lives in memory only,
  * so every app start fetches straight away.
@@ -121,6 +125,15 @@ async function ingestTopic(topic: FollowedTopic): Promise<IngestResult> {
   }
 }
 
+/** Previews are a bonus: nothing that goes wrong there may fail the round or the follow. */
+async function enrichSafely(opts: Pick<EnrichOptions, 'limit' | 'topic'>): Promise<void> {
+  try {
+    await enrichPending({ ...opts, since: retentionCutoff(), at: newsNowIso() });
+  } catch (err) {
+    logger.warn('news', `previews failed: ${errorMessage(err)}`);
+  }
+}
+
 async function runRefresh(): Promise<void> {
   let topics: FollowedTopic[] = [];
   const failed: TopicRef[] = [];
@@ -144,6 +157,7 @@ async function runRefresh(): Promise<void> {
         logger.warn('news', 'Yahoo rate limit hit; skipping the remaining ticker topics this round');
       }
     }
+    await enrichSafely({ limit: NEWS_PREVIEWS_PER_ROUND });
     pruneArticles(retentionCutoff());
     completed = true;
   } finally {
@@ -170,6 +184,9 @@ export async function refreshTopic(topic: FollowedTopic): Promise<void> {
   const result = await ingestTopic(topic);
   failedTopics = failedTopics.filter((t) => topicKey(t) !== topicKey(topic));
   if (result !== 'ok') failedTopics.push({ kind: topic.kind, value: topic.value });
+  if (result === 'ok') {
+    await enrichSafely({ limit: NEWS_PREVIEWS_PER_FOLLOW, topic: { kind: topic.kind, value: topic.value } });
+  }
 }
 
 /** Start a background round when the last one is stale. Never awaited by callers. */

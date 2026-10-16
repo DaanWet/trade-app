@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { BROWSER_HEADERS, PAGE_FETCH_TIMEOUT_MS } from '../../helpers/constants';
 import type { NewsItem } from './types';
 
 /**
@@ -69,6 +70,7 @@ export function parseGoogleNewsRss(xml: string): NewsItem[] {
       url: it.link,
       published_at: published.toISOString(),
       source: 'google',
+      image_url: null,
     });
   }
 
@@ -88,4 +90,61 @@ export async function fetchKeywordNews(keyword: string): Promise<NewsItem[]> {
   const res = await fetch(googleNewsUrl(keyword), { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`Google News answered ${res.status}`);
   return parseGoogleNewsRss(await res.text());
+}
+
+const DECODE_URL = 'https://news.google.com/_/DotsSplashUi/data/batchexecute';
+
+/**
+ * Decode a news.google.com article link to the publisher's URL. Unofficial: the article page
+ * carries a signature and a timestamp, and Google's own batchexecute RPC (`Fbv4je`) trades
+ * them for the real URL. The scheme has changed before, so every step throws on a surprise;
+ * the caller treats that as transient and counts it toward google/decode health.
+ */
+export async function resolveGoogleNewsUrl(guid: string): Promise<string> {
+  const page = await fetch(`https://news.google.com/rss/articles/${encodeURIComponent(guid)}`, {
+    headers: BROWSER_HEADERS,
+    signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
+  });
+  if (!page.ok) throw new Error(`article page answered ${page.status}`);
+  const html = await page.text();
+  const signature = html.match(/data-n-a-sg="([^"]+)"/)?.[1];
+  const timestamp = html.match(/data-n-a-ts="([^"]+)"/)?.[1];
+  if (!signature || !timestamp) throw new Error('no decode signature on the article page');
+
+  const request = JSON.stringify([
+    'garturlreq',
+    [
+      [
+        'X', 'X', ['X', 'X'], null, null, 1, 1, 'US:en', null, 1,
+        null, null, null, null, null, 0, 1,
+      ],
+      'X', 'X', 1, [1, 1, 1], 1, 1, null, 0, 0, null, 0,
+    ],
+    guid,
+    Number(timestamp),
+    signature,
+  ]);
+  const res = await fetch(DECODE_URL, {
+    method: 'POST',
+    headers: {
+      ...BROWSER_HEADERS,
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+    },
+    body: 'f.req=' + encodeURIComponent(JSON.stringify([[['Fbv4je', request, null, 'generic']]])),
+    signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`batchexecute answered ${res.status}`);
+  return parseDecodeResponse(await res.text());
+}
+
+/** `)]}'` + blank line + a JSON envelope whose third field is the JSON-encoded payload. */
+export function parseDecodeResponse(text: string): string {
+  try {
+    const envelope = JSON.parse(text.split('\n\n')[1]);
+    const payload = JSON.parse(envelope[0][2]);
+    if (payload[0] === 'garturlres' && typeof payload[1] === 'string') return payload[1];
+  } catch {
+    // fall through to the generic error: the details would only repeat Google's internals
+  }
+  throw new Error('unexpected batchexecute response');
 }

@@ -34,6 +34,7 @@ backend/src/
       chartQuote.ts        — live quote via the crumb-free /v8/chart endpoint (quote() fallback)
       yahooNews.ts         — ticker news via yahoo.search (symbol + company name, kept only when relatedTickers has the symbol)
       googleNews.ts        — keyword news via Google News RSS (nl-BE, last 7 days; fast-xml-parser)
+      (googleNews also decodes a news.google.com link to the publisher URL — unofficial batchexecute RPC)
     providerHealth.ts    — consecutive-failure tracker per provider+operation; escalates a streak to logger.error (→ Sentry) and feeds /api/diagnostics
     marketData.ts        — quote + historical with daily_prices cache + forward-fill (uses priceProvider)
     fxService.ts         — convert/getRate/warmHistoricalRates with fx_rates cache + forward-fill (uses fxProvider)
@@ -42,6 +43,8 @@ backend/src/
     cashService.ts       — derived cash balance (net deposits − net invested), display currency
     taxCalc.ts           — Belgian "meerwaardebelasting" report (per-year, parameterizable)
     newsService.ts       — followed topics (open positions ∪ watchlist ∪ keywords), single-flight refresh rounds, staleness, status
+    articlePreview.ts    — one article page → og:image / og:description (head only; http(s) + SSRF guard; 5 s, 512 KB; consent walls = none)
+    newsPreviews.ts      — enrichment step: pending previews once per article, 4 at a time, Google decode + circuit breaker, providerHealth (google.decode, yahoo.article)
   helpers/
     constants.ts    — SETTING_KEYS (incl. NEWS_LAST_SEEN), TRADE_SIDES, CASH_TX_TYPES, PRICE_CACHE_TTL_SECONDS, OPEN_SHARES_EPSILON, NEWS_TOPIC_KINDS + NEWS_REFRESH_INTERVAL_MS / NEWS_RETRY_AFTER_FAILURE_MS / NEWS_RETENTION_DAYS
     errors.ts       — errorMessage(), HttpError class
@@ -77,12 +80,12 @@ frontend/src/app/
     cash/         — cash balance summary + deposits/withdrawals list with inline form
     tax/          — yearly tax report cards
     settings/     — display currency selector
-    news/         — timeline with topic chips, NIEUW labels, follow/unfollow, refresh
+    news/         — timeline with topic chips, NIEUW labels, follow/unfollow, refresh; compact/uitgebreid toggle (thumbnail + inleiding)
 
 electron/
   main.ts           — Electron main: in prod require()s backend/dist/app.js, runs Express in-process on random 127.0.0.1 port, loads built Angular SPA; auto-update via electron-updater. Inits Sentry + sets LOG_DIR/APP_VERSION env before requiring backend; injects the Sentry sink into the backend logger after require.
   sentry.ts         — @sentry/electron/main init + PII/financial scrubbing (beforeSend/beforeSendTransaction/beforeSendLog) + the sink the backend logger fans out to. DSN-gated (DEFAULT_DSN const / SENTRY_DSN env).
-  scrub.ts          — pure scrub helpers (scrubText, stripQuery, scrubBreadcrumb, scrubRequest, scrubSpanData); no Sentry import, so a plain Node script can check them (electron/ has no test runner)
+  scrub.ts          — pure scrub helpers (scrubText, stripQuery, scrubUrl, isApiHost, redactGoogleArticleId, scrubBreadcrumb, scrubRequest, scrubSpanData); no Sentry import, so a plain Node script can check them (electron/ has no test runner)
   preload.ts        — preload bridge
 package.json (root) — build/dist scripts + electron-builder config (asarUnpack better-sqlite3)
 ```
@@ -96,9 +99,9 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - **cash_transactions**: id, type ('DEPOSIT'/'WITHDRAWAL'), amount (>0), currency, tx_date, notes, created_at
 - **settings**: key-value (display_currency default 'EUR')
 - **news_topics**: id, kind ('TICKER'/'KEYWORD'), value (COLLATE NOCASE), created_at · UNIQUE(kind, value) — watchlist + keywords only
-- **news_articles**: id (Yahoo uuid / Google guid), title, publisher, url, published_at, source, fetched_at (first sighting)
+- **news_articles**: id (Yahoo uuid / Google guid), title, publisher, url (Google: decoded publisher URL once the decode succeeded, kept even when the page fetch fails), published_at, source, image_url, summary, preview_at (NULL = preview still to try), fetched_at (first sighting)
 - **news_article_topics**: (article_id, kind, value) PK, ON DELETE CASCADE — an article's badges
-- **schema_version**: tracks applied migrations (current: 5)
+- **schema_version**: tracks applied migrations (current: 6)
 
 ## API endpoints
 
@@ -267,12 +270,25 @@ provider is in the quote currency** — never assume it matches the trade. Rules
 - **"New"** = `fetched_at > settings.news_last_seen`. The page echoes the server's `as_of` to
   `POST /seen` (not "now"), and the marker never moves backwards. The page keeps a visit-scoped set
   so labels survive ⟳.
+- **Previews** (`newsPreviews.ts`, `articlePreview.ts`): Yahoo's search thumbnail is stored at
+  ingest; after each round (max 50) and each follow (max 20) every unsettled article's page is
+  read once for `og:image` / `og:description` — never the body. Google links go through an
+  **unofficial** decode (article page signature → `batchexecute` RPC); it has broken before, so
+  failures stay pending, trip a breaker after 3 in a row (per enrichment call) and escalate via
+  `google.decode`. `ok`/`none` set `preview_at`; network/5xx/429 leave it NULL for the next round. Images are
+  **hot-linked** (`referrerpolicy="no-referrer"`, no proxy/cache — publishers' CDNs see the IP,
+  as when opening the article). Log lines carry host + reason only. Page fetches send an honest
+  link-preview `User-Agent` (`LINK_PREVIEW_HEADERS`), not a browser one: Yahoo answers a browser UA
+  with a ~22 KB `link:` header, above undici's 16 KB limit (`UND_ERR_HEADERS_OVERFLOW`); only
+  Google's decode keeps `BROWSER_HEADERS`.
 - **Retention 30 days**: stale items are skipped at ingest (else they would be re-inserted as "new"
   every round), and older rows are pruned after each round (links cascade).
 - **Privacy**: a keyword's text never goes into a log line (`keyword #<id>`), because warnings
   become Sentry breadcrumbs. It also stays out of the fetch breadcrumbs `@sentry/electron` records
   on its own: the Sentry scrub (`scrubBreadcrumb` in `electron/scrub.ts`) deletes `http.query` /
   `http.fragment`, cuts the query off `url`, and drops console breadcrumbs' raw `arguments`.
+  Session Replay bypasses that scrub, so the news page hides its own text (see "Privacy = cloud +
+  scrub" under Observability).
 - **Later: AI layer.** Articles and badges are in the db, so a summarizer can read them after a
   round and write a digest without touching the fetch pipeline. The API-key question (per-user
   vs. bundled) was deferred.
@@ -284,7 +300,7 @@ provider is in the quote currency** — never assume it matches the trade. Rules
 - **`GET /api/diagnostics`** serves the ring buffer + app version + whitelisted settings (`SAFE_SETTING_KEYS`) + log-file path + counters (`convertFailures`, `rateLimited`, `providerFailures`). Local-only (127.0.0.1, single-user) → intentionally **not** scrubbed.
 - **Repeated provider failures escalate** (`services/providerHealth.ts`). A `logger.warn` only becomes a Sentry *breadcrumb*, and breadcrumbs only travel alongside a captured error — so a provider that failed silently for weeks produced **no remote signal at all** (the first report came from a user, not the app). `recordFailure(provider, operation, message)` counts consecutive failures and logs once at **error** level after `ESCALATE_AFTER` (3) in a row; `recordSuccess` clears the streak and re-arms it. Counters are per provider *and* operation, because during the crumb outage `quote()` was dead while `chart()` was fine. Frankfurter 404s are deliberately **not** counted: they mean "the ECB doesn't publish this pair" (TWD, KRW) and the composite provider's Yahoo fallback is the designed path.
 - **Remote = Sentry** (`@sentry/electron`, OpenTelemetry-based v10 SDK under the hood). The backend never imports Electron/Sentry: `electron/main.ts` calls `Sentry.init` (before the backend `require`, so require-time throws are caught) then injects a sink via the re-exported `setRemoteSink`. The sink maps warn/info/debug → breadcrumbs and `error` → `captureException`/`captureMessage`. Renderer errors are caught by a minimal `@sentry/electron/renderer` init in `frontend/src/main.ts` (inherits DSN/config from main over IPC).
-- **Privacy = cloud + scrub**: `sendDefaultPii:false` + `beforeSend`/`beforeSendLog` drop request bodies/query strings and redact paths/amounts/numbers/tickers (`scrubText` in `electron/scrub.ts`). Breadcrumb `data` is scrubbed too (`scrubBreadcrumb`: fetch `http.query`/`http.fragment` deleted, `url` query cut, console `arguments` dropped) on both errors and transactions; span data keeps its URL but loses its query. The local file + `/api/diagnostics` stay unscrubbed by design.
+- **Privacy = cloud + scrub**: `sendDefaultPii:false` + `beforeSend`/`beforeSendLog` drop request bodies/query strings and redact paths/amounts/numbers/tickers (`scrubText` in `electron/scrub.ts`). Breadcrumb `data` is scrubbed too (`scrubBreadcrumb`: fetch `http.query`/`http.fragment` deleted, `url` query cut, console `arguments` dropped) on both errors and transactions; span data keeps its URL but loses its query. Breadcrumb/span URLs keep their path only on API hosts (`isApiHost` in `electron/scrub.ts`); any other host (a publisher's article page) is cut to its origin, since an article slug reveals what the user follows. Google News `/rss/articles/<id>` paths (the decode fetches them) are cut to `/rss/articles/<redacted>`. **Session Replay bypasses `beforeSend`**: `@sentry/electron`'s main process only normalizes paths in replay envelopes before handing them to the transport, and `maskAllText` only masks text, not attributes (`<a href>` with decoded publisher URLs/slugs) or `title`. So the news page protects itself: the article list carries `data-sentry-block` (Replay records a placeholder), the intro `div` carries `data-sentry-element="news-summary"` (Sentry's `htmlTreeAsString` then names the element that way instead of serializing `[title="<intro>"]` into click breadcrumbs and INP/LCP spans), and `frontend/src/main.ts` drops `resource.img` performance spans via `beforeAddRecordingEvent` (hot-linked image URLs can reveal the article). Any new page showing article text/links needs the same. The local file + `/api/diagnostics` stay unscrubbed by design.
 - **DSN config**: Sentry is **DSN-gated** — set `SENTRY_DSN` (env, dev) or paste the public DSN into `DEFAULT_DSN` in `electron/sentry.ts` (for packaged builds; the DSN is a public ingest key, safe to ship). With no DSN, Sentry is skipped and only the local file + `/api/diagnostics` fallback runs (dev/tests stay clean). Future option (documented, not wired): swap the SDK transport for Sentry's direct OTLP endpoints (`…/integration/otlp/v1/{traces,logs}`).
 
 ## Locale & formatting
@@ -344,7 +360,7 @@ linux/win/mac builds to a GitHub Release.
 
 ## Known limitations / future work
 
-- News has no AI summary or subject clustering yet (see "News → Later: AI layer").
+- News has no AI summary or subject clustering yet (see "News → Later: AI layer"); some publishers (e.g. Mediahuis titles) refuse preview requests (403), so their articles show without image/intro.
 - No authentication — single-user local app. Don't expose to the internet without adding auth.
 
 ## Native module tip

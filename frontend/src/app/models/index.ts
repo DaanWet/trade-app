@@ -260,6 +260,10 @@ export interface NewsArticle {
   url: string;
   published_at: string;
   source: 'yahoo' | 'google';
+  /** Thumbnail (http(s)); null when the source and the page had none. */
+  image_url: string | null;
+  /** De eigen inleiding van de uitgever (og:description), max. 300 tekens. */
+  summary: string | null;
   topics: NewsTopicRef[];
   is_new: boolean;
 }

@@ -6,7 +6,7 @@ import { logger } from './helpers/logger';
  * To add a new migration: bump SCHEMA_VERSION and add a new block at the bottom.
  */
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 export function runMigrations(db: Database): void {
   db.exec(`
@@ -149,6 +149,18 @@ export function runMigrations(db: Database): void {
       );
     `);
     db.prepare(`INSERT INTO schema_version (version) VALUES (?)`).run(5);
+  }
+
+  if (current < 6) {
+    db.exec(`
+      -- Article previews (issue #11 addendum): a thumbnail and the publisher's own intro
+      -- (og:description), read once per article by the enrichment step. preview_at NULL =
+      -- still to try; a transient failure leaves it NULL so the next round retries.
+      ALTER TABLE news_articles ADD COLUMN image_url  TEXT;
+      ALTER TABLE news_articles ADD COLUMN summary    TEXT;
+      ALTER TABLE news_articles ADD COLUMN preview_at TEXT;
+    `);
+    db.prepare(`INSERT INTO schema_version (version) VALUES (?)`).run(6);
   }
 
   logger.info('schema', `At version ${SCHEMA_VERSION}`);

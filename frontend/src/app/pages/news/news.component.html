@@ -1,6 +1,30 @@
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
   <h2 class="h4 mb-0"><i class="bi bi-newspaper me-2"></i>Nieuws</h2>
   <div class="d-flex gap-2">
+    <div class="btn-group btn-group-sm" role="group" aria-label="Weergave">
+      <button
+        type="button"
+        class="btn btn-outline-secondary"
+        title="Compact"
+        data-test="view-compact"
+        [class.active]="!extended()"
+        [attr.aria-pressed]="!extended()"
+        (click)="view.set('compact')"
+      >
+        <i class="bi bi-list"></i><span class="visually-hidden">Compact</span>
+      </button>
+      <button
+        type="button"
+        class="btn btn-outline-secondary"
+        title="Uitgebreid"
+        data-test="view-extended"
+        [class.active]="extended()"
+        [attr.aria-pressed]="extended()"
+        (click)="view.set('extended')"
+      >
+        <i class="bi bi-card-text"></i><span class="visually-hidden">Uitgebreid</span>
+      </button>
+    </div>
     <button type="button" class="btn btn-sm btn-outline-primary" (click)="showAdd.set(!showAdd())">
       <i class="bi bi-plus-lg me-1"></i>Volgen
     </button>
@@ -150,17 +174,47 @@
     } @else if (articles().length === 0) {
       <div class="text-center text-muted py-4">Geen artikels voor dit onderwerp.</div>
     } @else {
-      <ul class="list-group list-group-flush">
+      <!-- Sentry Replay slaat beforeSend over: zonder block komen titels, href's en intro's mee. -->
+      <ul class="list-group list-group-flush" data-sentry-block>
         @for (a of articles(); track a.id) {
           <li class="list-group-item bg-transparent border-secondary px-0">
-            <div class="d-flex align-items-start gap-2">
-              @if (isNew(a)) {
+            <div class="d-flex align-items-start" [class.gap-2]="!extended()" [class.gap-3]="extended()">
+              @if (extended()) {
+                <a class="news-thumb flex-shrink-0" [href]="a.url" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">
+                  @if (showImage(a)) {
+                    <img
+                      [src]="a.image_url"
+                      alt=""
+                      loading="lazy"
+                      referrerpolicy="no-referrer"
+                      data-test="thumb"
+                      (error)="imageFailed(a.id)"
+                    />
+                  } @else {
+                    <i class="bi bi-newspaper" data-test="thumb-placeholder"></i>
+                  }
+                </a>
+              } @else if (isNew(a)) {
                 <span class="badge text-bg-primary mt-1" data-test="new-label">NIEUW</span>
               }
-              <div class="flex-grow-1">
+              <div class="flex-grow-1 news-body">
+                @if (extended() && isNew(a)) {
+                  <span class="badge text-bg-primary me-1 align-text-bottom" data-test="new-label">NIEUW</span>
+                }
                 <a class="link-light fw-semibold text-decoration-none" [href]="a.url" target="_blank" rel="noopener">
                   {{ a.title }}
                 </a>
+                @if (extended() && a.summary) {
+                  <!-- data-sentry-element: Sentry's htmlTreeAsString noemt het element zo i.p.v. [title]="inleiding" in click-breadcrumbs en INP/LCP-spans. -->
+                  <div
+                    class="news-summary small text-muted"
+                    [title]="a.summary"
+                    data-sentry-element="news-summary"
+                    data-test="summary"
+                  >
+                    {{ a.summary }}
+                  </div>
+                }
                 <div class="small text-muted">
                   {{ a.publisher ?? 'Onbekende bron' }} ·
                   <span [title]="formatDateTime(a.published_at)">{{ formatRelativeTime(a.published_at) }}</span>

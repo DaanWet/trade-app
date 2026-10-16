@@ -1,6 +1,7 @@
 import { yahoo } from '../yahooClient';
 import { isRateLimitError, markLimited, markRecovered } from '../rateLimitMonitor';
 import type { NewsItem } from './types';
+import { isAllowedUrl } from '../articlePreview';
 
 /**
  * Ticker news from Yahoo's search endpoint.
@@ -29,6 +30,10 @@ export function cleanCompanyName(name: string): string {
   return words.join(' ').replace(/[,\s]+$/, '');
 }
 
+interface YahooThumbnail {
+  resolutions?: { url?: string; width?: number; height?: number; tag?: string }[];
+}
+
 interface YahooNewsRaw {
   uuid?: string;
   title?: string;
@@ -36,6 +41,27 @@ interface YahooNewsRaw {
   link?: string;
   providerPublishTime?: Date | number | string;
   relatedTickers?: string[];
+  thumbnail?: YahooThumbnail;
+}
+
+const THUMB_TAG = '140x140';
+const THUMB_MIN_WIDTH = 100;
+
+/**
+ * The search result's ready-made 140×140 crop when there is one (small and square — what the
+ * timeline shows), else the smallest one wide enough, else whatever comes first.
+ */
+export function pickThumbnail(thumbnail: YahooThumbnail | undefined): string | null {
+  const usable = (thumbnail?.resolutions ?? []).filter(
+    (r): r is { url: string; width?: number; tag?: string } =>
+      typeof r.url === 'string' && isAllowedUrl(r.url),
+  );
+  const tagged = usable.find((r) => r.tag === THUMB_TAG);
+  if (tagged) return tagged.url;
+  const wideEnough = usable
+    .filter((r) => (r.width ?? 0) >= THUMB_MIN_WIDTH)
+    .sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
+  return (wideEnough[0] ?? usable[0])?.url ?? null;
 }
 
 function toNewsItem(raw: YahooNewsRaw, symbol: string): NewsItem | null {
@@ -53,6 +79,7 @@ function toNewsItem(raw: YahooNewsRaw, symbol: string): NewsItem | null {
     url: raw.link,
     published_at: published.toISOString(),
     source: 'yahoo',
+    image_url: pickThumbnail(raw.thumbnail),
   };
 }
 

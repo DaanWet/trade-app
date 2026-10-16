@@ -8,8 +8,11 @@ import {
   insertNewsTopic,
   listArticlesFor,
   listNewsTopics,
+  listPendingPreviews,
   pruneArticles,
   saveArticles,
+  setArticleUrl,
+  settlePreview,
   type TopicRef,
 } from "./news";
 
@@ -19,7 +22,7 @@ const ECB: TopicRef = { kind: "KEYWORD", value: "ECB rente" };
 const T = "2026-10-15T10:00:00.000Z";
 
 function item(id: string, published_at = "2026-10-15T08:00:00.000Z"): NewsItem {
-  return { id, title: `Title ${id}`, publisher: "Pub", url: `https://example.com/${id}`, published_at, source: "yahoo" };
+  return { id, title: `Title ${id}`, publisher: "Pub", url: `https://example.com/${id}`, published_at, source: "yahoo", image_url: null };
 }
 
 function linkCount(): number {
@@ -106,5 +109,62 @@ describe("pruneArticles", () => {
     expect(pruneArticles("2026-09-15T00:00:00.000Z")).toBe(1);
     expect(listArticlesFor([NVDA]).map((a) => a.id)).toEqual(["fresh"]);
     expect(linkCount()).toBe(1);
+  });
+});
+
+const SINCE = "2026-10-01T00:00:00.000Z";
+
+describe("article previews", () => {
+  it("lists unsettled articles newest first, within the cutoff and the limit", () => {
+    saveArticles(
+      NVDA,
+      [
+        item("old", "2026-09-01T08:00:00.000Z"),
+        item("a", "2026-10-14T08:00:00.000Z"),
+        item("b", "2026-10-15T08:00:00.000Z"),
+        item("c", "2026-10-13T08:00:00.000Z"),
+      ],
+      T,
+    );
+    settlePreview("c", null, T);
+
+    expect(listPendingPreviews({ since: SINCE, limit: 10 }).map((p) => p.id)).toEqual(["b", "a"]);
+    expect(listPendingPreviews({ since: SINCE, limit: 1 }).map((p) => p.id)).toEqual(["b"]);
+  });
+
+  it("narrows to one topic's articles", () => {
+    saveArticles(NVDA, [item("n1")], T);
+    saveArticles(ECB, [item("e1")], T);
+
+    expect(listPendingPreviews({ since: SINCE, limit: 10, topic: ECB }).map((p) => p.id)).toEqual(["e1"]);
+  });
+
+  it("stores the search thumbnail at ingest and keeps it over the page image", () => {
+    saveArticles(NVDA, [{ ...item("a"), image_url: "https://img.example/thumb.jpg" }], T);
+    settlePreview("a", { image_url: "https://img.example/og.jpg", summary: "Intro" }, "2026-10-15T11:00:00.000Z");
+
+    expect(listArticlesFor([NVDA])[0]).toMatchObject({
+      image_url: "https://img.example/thumb.jpg",
+      summary: "Intro",
+      preview_at: "2026-10-15T11:00:00.000Z",
+    });
+  });
+
+  it("fills a missing image from the page and settles a 'none' without fields", () => {
+    saveArticles(NVDA, [item("a"), item("b")], T);
+    settlePreview("a", { image_url: "https://img.example/og.jpg", summary: null }, T);
+    settlePreview("b", null, T);
+
+    const byId = new Map(listArticlesFor([NVDA]).map((x) => [x.id, x]));
+    expect(byId.get("a")).toMatchObject({ image_url: "https://img.example/og.jpg", summary: null, preview_at: T });
+    expect(byId.get("b")).toMatchObject({ image_url: null, summary: null, preview_at: T });
+    expect(listPendingPreviews({ since: SINCE, limit: 10 })).toEqual([]);
+  });
+
+  it("replaces an article's url", () => {
+    saveArticles(ECB, [item("g")], T);
+    setArticleUrl("g", "https://www.tijd.be/x.html");
+
+    expect(listArticlesFor([ECB])[0].url).toBe("https://www.tijd.be/x.html");
   });
 });

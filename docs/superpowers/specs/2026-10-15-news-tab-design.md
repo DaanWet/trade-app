@@ -312,7 +312,7 @@ The "News agent … not yet implemented" line is replaced by the note under "Lat
 ## Out of scope
 
 - AI summaries or clustering by subject.
-- Fetching article bodies.
+- Fetching article bodies. (Previews read only the page's `<head>` meta tags; see the addendum.)
 - Per-article read state.
 - Muting an open position's news.
 - Persisting the chip filter.
@@ -323,6 +323,236 @@ The "News agent … not yet implemented" line is replaced by the note under "Lat
 
 Articles and their topics are in the db, so a later summarizer can read
 `news_articles ⋈ news_article_topics` after `refreshNews()`, cluster by subject and write a digest
-row next to them, without changing the fetch pipeline. Article bodies are not available (only
-titles plus links), so summaries would either work from titles or fetch pages. The API key
+row next to them, without changing the fetch pipeline. Article bodies are not available, but most
+articles carry the publisher's own preview text (`summary`, see the addendum), which gives a
+summarizer more than the title to work from. The API key
 question (per-user key vs. bundled) is open and was deferred deliberately.
+
+---
+
+# Addendum (2026-10-16): article previews — image + intro, compact/extended toggle
+
+## Problem
+
+The timeline shows a title, publisher and time per article. A small image and a short intro make
+it much faster to judge whether an article is worth opening. Not everyone wants the denser
+layout, so the page gets a toggle: **compact** (today's list) and **extended** (image + intro).
+
+## Decisions (from brainstorming)
+
+- **Enrich everything**: ticker news (Yahoo) and keyword news (Google) both get an image and an
+  intro where the publisher provides them.
+- **Separate enrichment step**, once per article, stored in the db. Not inside the providers (that
+  would re-fetch known articles every round) and not on demand from the page (many requests at
+  view time, images popping in late).
+- The intro is the publisher's own preview text (`og:description`), never the article body.
+- A failed enrichment never breaks anything: the article just renders as it does today.
+- The decoded Google link replaces the stored `url`, so a click goes straight to the publisher.
+- Images are hot-linked from the publishers' CDNs; no backend image proxy or cache (YAGNI for a
+  single-user local app).
+- The toggle defaults to **extended** and is remembered in localStorage.
+
+## Findings (spike, 2026-10-16)
+
+| source | image | intro |
+| --- | --- | --- |
+| Yahoo search (`news[]`) | `thumbnail.resolutions[]` on nearly every item, incl. a ready-made `140x140` crop. No extra request. | Not in the search result. The `finance.yahoo.com` article page has `og:description` (3/3 tested, no consent wall from a BE connection). |
+| Google News RSS | None (no `media:*` elements). | None: `<description>` repeats the title + source as HTML. |
+
+- A Google `link` (`news.google.com/rss/articles/<guid>`) lands on a generic Google page whose
+  `og:*` tags describe Google News itself. The real URL comes from an **unofficial** two-step
+  decode: the article page carries `data-n-a-sg` (signature) and `data-n-a-ts` (timestamp), and a
+  POST to `https://news.google.com/_/DotsSplashUi/data/batchexecute` (rpc `Fbv4je`,
+  `garturlreq`) answers `garturlres` with the publisher URL. This scheme has broken before when
+  Google changed it.
+- Publisher pages after decoding: 5/6 gave an image and an intro (De Tijd, Bloovi, MarketScreener,
+  Evoke PR, De Aandeelhouder). Nieuwsblad answered 403 (Mediahuis bot protection). Some intros are
+  boilerplate that only repeats the title (Bloovi: `Lees "<title>" op Bloovi.`).
+- There is no Content-Security-Policy, so external images load in Electron as-is.
+
+## Data model — migration 6
+
+```sql
+ALTER TABLE news_articles ADD COLUMN image_url  TEXT;  -- http(s) only; NULL = none
+ALTER TABLE news_articles ADD COLUMN summary    TEXT;  -- publisher preview text, ≤ 300 chars
+ALTER TABLE news_articles ADD COLUMN preview_at TEXT;  -- ISO 8601 UTC; NULL = still to try
+```
+
+A new migration rather than editing migration 5: dev databases already have v5. Existing rows
+start with `preview_at NULL` and are backfilled by the next rounds like any new article.
+`schema_version` current becomes 6.
+
+## Backend
+
+### Thumbnail at ingest — `providers/yahooNews.ts`
+
+`NewsItem` gains `image_url: string | null`. `pickThumbnail(resolutions)` chooses, in order: the
+resolution tagged `140x140`; else the smallest one with `width ≥ 100`; else the first; else
+`null`. Only `http(s)` URLs count. Google items get `image_url: null`. `saveArticles` stores it
+(the insert stays `INSERT OR IGNORE`, so rows that already exist keep their values).
+
+### Google link decode — `providers/googleNews.ts`
+
+`resolveGoogleNewsUrl(guid): Promise<string>` does the two-step decode above and throws when a
+step fails (no signature/timestamp on the page, non-2xx, response without `garturlres`).
+
+### Preview extraction — `services/articlePreview.ts`
+
+- `extractPreview(html, title, baseUrl): { image_url, summary }` — pure.
+  - Scans `<meta>` tags up to `</head>` (or the whole input when there is none); attributes may
+    come in any order (`content` before `property` is common).
+  - Text: `og:description` → `twitter:description` → `description`.
+    Image: `og:image` → `twitter:image`.
+  - Decodes HTML entities (named basics plus `&#NN;` / `&#xNN;`), collapses whitespace.
+  - Resolves a relative image URL against `baseUrl`; drops anything that isn't `http(s)`.
+  - Drops the intro when its normalized form (lowercase, single spaces) **contains** the
+    normalized title.
+  - Truncates the intro to 300 characters at the last word boundary (a hard cut when the first
+    300 characters hold no space), appending `…`.
+- `isAllowedUrl(url)`: `http(s)` only, and not `localhost`, `*.localhost`, or an IP literal in a
+  loopback / private / link-local range. A cheap SSRF guard for URLs that come from third parties.
+- `fetchPreview(url, title): Promise<PreviewOutcome>` where the outcome is one of
+  - `{ kind: 'ok', image_url, summary }` — a 2xx `text/html` page (either field may be `null`);
+  - `{ kind: 'none', reason }` — definitive: a 4xx, a non-HTML content type, or a URL that
+    `isAllowedUrl` rejects;
+  - `{ kind: 'retry', reason }` — transient: network error, timeout, 5xx, 429.
+  - Request: link-preview `User-Agent` (`trade-app-linkpreview/1.0`, Ruling 10 — a browser UA makes
+    Yahoo answer with a header over undici's 16 KB limit; Google's decode keeps the browser UA),
+    `Accept: text/html`, `Accept-Language: nl-BE,nl;q=0.9,en;q=0.8`,
+    redirects followed, `AbortSignal.timeout(5000)`. The body is read as a stream and abandoned
+    after 512 KB; decoded with the charset from `Content-Type`, defaulting to UTF-8.
+
+### Enrichment — `services/newsPreviews.ts`
+
+`enrichPending({ topic?, limit }): Promise<void>` loads articles with `preview_at IS NULL` and
+`published_at ≥ retention cutoff`, newest first, optionally restricted to one topic, at most
+`limit`. It processes them **4 at a time**:
+
+- **Yahoo**: `fetchPreview(url, title)`. On `ok`, the stored Yahoo thumbnail wins over the page's
+  `og:image`; the page image only fills a `NULL`.
+- **Google**: `resolveGoogleNewsUrl(guid)` first.
+  - Decode failed → `retry` (and counts toward the circuit breaker).
+  - Decoded URL rejected by `isAllowedUrl` → `none`, the Google URL stays.
+  - Otherwise the decoded URL is stored as `url` at once (even if the publisher fetch then
+    fails), then `fetchPreview` on it.
+- Outcome handling: `ok` and `none` set `preview_at = now` (`ok` also writes the fields);
+  `retry` leaves `preview_at NULL`, so the next round tries again. Retries are bounded by the
+  30-day retention.
+- **Circuit breaker**: 3 consecutive decode failures (in completion order) within one call skip the remaining Google
+  articles of that call (they stay `NULL`), so a broken decode doesn't hammer Google.
+
+Call sites in `newsService.ts`:
+
+- `runRefresh()`: after ingesting all topics, before pruning — `enrichPending({ limit: 50 })`.
+  Anything beyond 50 waits for the next round. `status.refreshing` stays `true` until enrichment
+  is done, so the page's existing "refreshing → reload when done" flow picks up the images.
+- `refreshTopic(topic)` (a new follow): `enrichPending({ topic, limit: 20 })` after the ingest.
+  Following a keyword therefore takes a few seconds longer.
+
+### Error handling and observability
+
+- Enrichment never fails a round: every article is wrapped; `failed_topics` and the "new"
+  semantics are about fetching news only.
+- `providerHealth` tracks only what can break systematically:
+  - `google` / `decode` — failure per failed decode, success per decoded URL.
+  - `yahoo` / `article` — for article URLs on a `yahoo.com` host: an outcome without a summary
+    counts as a failure (a consent wall answers 200 without the article's tags), a summary as a
+    success.
+  - Publisher pages are **not** tracked: a 403 from one site is expected variance, like the
+    Frankfurter 404s.
+- Logging: per article at **debug**, host + status/reason only (`preview: www.nieuwsblad.be →
+  403`). Never the full URL or the title: both can reveal a keyword, and log lines become Sentry
+  breadcrumbs. One **info** line per call that processed anything, counts only
+  (`previews: 12 ok, 3 none, 2 retry`).
+
+### API
+
+`NewsArticle` gains `image_url: string | null` and `summary: string | null`
+(`listArticlesFor` selects them). No new routes, no other contract changes.
+
+## Frontend
+
+### Toggle — `pages/news/`
+
+- A small button group in the header, next to "Volgen" and ⟳: two icon buttons, `bi-list`
+  (Compact) and `bi-card-text` (Uitgebreid), with `title` and `aria-pressed`.
+- State: `persistedString<'compact' | 'extended'>('news.view', 'extended', ['compact', 'extended'])`
+  from `utils/storage.ts`.
+- The toggle only changes the rendering; filters, counts and NIEUW labels are unaffected.
+
+### Compact
+
+Exactly today's list.
+
+### Extended
+
+```
+┌──────┐  [NIEUW] Article title (link)
+│ img  │  Intro in small muted text, at most two lines,
+│ 64px │  then clamped with…
+└──────┘  De Tijd · 2 u geleden · (KBC)
+```
+
+- Thumbnail: 64×64, rounded, `object-fit: cover`, `loading="lazy"`, `referrerpolicy="no-referrer"`
+  (sidesteps Referer-based hot-link blocks and leaks less). Wrapped in the same link as the title.
+- No image, or the image fails to load (`(error)` adds the article id to a signal-held set): a
+  placeholder of the same size with a `bi-newspaper` icon, so titles stay aligned. Articles not
+  enriched yet look the same until the round finishes and the page reloads.
+- Intro: below the title, `-webkit-line-clamp: 2`, full text in the `title` attribute; rendered by
+  interpolation only, never `innerHTML`. No intro → no empty space.
+- The NIEUW label sits inline before the title instead of as its own column.
+
+### Model
+
+`NewsArticle` (`models/index.ts`) gains `image_url: string | null` and `summary: string | null`.
+
+## Privacy
+
+- In extended mode the publishers' CDNs see the user's IP when the news page is open, as they
+  would when an article is opened. `no-referrer` limits what else leaks. Documented in CLAUDE.md
+  as a deliberate choice.
+- The backend's preview requests reveal the IP to publishers the same way.
+- Known risk: the `batchexecute` decode is unofficial and may break at any time; the escalation
+  makes that visible, and articles fall back to today's rendering.
+
+## Testing
+
+Backend (vitest):
+
+- `extractPreview`: priority og → twitter → description; attribute order; entities (`&quot;`,
+  `&#39;`, `&#x27;`, `&amp;`); relative image URL resolved; non-`http(s)` image dropped; intro
+  containing the title dropped; truncation at a word boundary with `…`; input without `<head>`.
+- `isAllowedUrl`: http/https allowed; `ftp:`, `javascript:`, `localhost`, `127.0.0.1`, `10.x`,
+  `192.168.x`, `[::1]` rejected.
+- `fetchPreview` (mocked `fetch`): 2xx HTML → `ok`; 403 → `none`; non-HTML → `none`; 503 / 429 /
+  network error / timeout → `retry`; body cut at 512 KB.
+- `pickThumbnail`: `140x140` preferred, smallest ≥ 100 px fallback, first as last resort, none →
+  `null`, non-`http(s)` skipped.
+- `resolveGoogleNewsUrl` (mocked `fetch`): happy path; page without signature → throws; malformed
+  `batchexecute` response → throws.
+- `enrichPending` (mocked fetchers, in-memory db): `ok` / `none` / `retry` outcomes and
+  `preview_at`; Yahoo thumbnail not overwritten by `og:image`; Google `url` replaced by the decoded
+  URL, also when the publisher fetch fails; rejected decoded URL → `none` and URL unchanged; circuit
+  breaker after 3 decode failures; `limit` and newest-first order; topic restriction;
+  `providerHealth` calls for `google/decode` and `yahoo/article`.
+- Migration 6: columns present, idempotent re-run.
+
+Frontend (Karma):
+
+- Default view is extended: image and intro rendered.
+- Toggle to compact hides both, and the choice survives a re-create (localStorage).
+- No `image_url`, or an `(error)` on the image → placeholder.
+- NIEUW label inline in extended mode.
+
+## Documentation
+
+CLAUDE.md: `news_articles` columns + schema current 6; the News section gets a "Previews"
+paragraph (enrichment step, Google decode risk, hot-linked images); file structure lists
+`services/articlePreview.ts` and `services/newsPreviews.ts`.
+
+## Out of scope (addendum)
+
+- An image proxy or local thumbnail cache.
+- Retrying a `none` outcome (e.g. after a publisher lifts a 403).
+- Previews from article bodies or readability-style extraction.
+- A per-topic or per-source toggle; the view mode is global.

@@ -7,6 +7,7 @@ const { fetchTickerNews, fetchKeywordNews } = vi.hoisted(() => ({
 }));
 vi.mock("../services/providers/yahooNews", () => ({ fetchTickerNews }));
 vi.mock("../services/providers/googleNews", () => ({ fetchKeywordNews }));
+vi.mock("../services/newsPreviews", () => ({ enrichPending: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../services/marketData", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../services/marketData")>()),
   fetchQuote: vi.fn().mockResolvedValue(null),
@@ -23,7 +24,7 @@ import type { NewsItem } from "../services/providers/types";
 const RECENT = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
 function item(id: string): NewsItem {
-  return { id, title: `Title ${id}`, publisher: "Pub", url: `https://example.com/${id}`, published_at: RECENT, source: "google" };
+  return { id, title: `Title ${id}`, publisher: "Pub", url: `https://example.com/${id}`, published_at: RECENT, source: "google", image_url: null };
 }
 
 function follow(kind: string, value: string) {
@@ -87,6 +88,8 @@ describe("news routes", () => {
         url: "https://example.com/g1",
         published_at: RECENT,
         source: "google",
+        image_url: null,
+        summary: null,
         topics: [{ kind: "KEYWORD", value: "ECB rente" }],
         is_new: true,
       },

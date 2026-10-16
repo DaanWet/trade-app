@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/electron/main';
-import { scrubBreadcrumb, scrubRequest, scrubSpanData, scrubText, stripQuery } from './scrub';
+import { scrubBreadcrumb, scrubRequest, scrubSpanData, scrubText, scrubUrl } from './scrub';
 
 /**
  * Sentry wiring for the Electron main process (where the Express backend runs in-process
@@ -67,8 +67,10 @@ export function initSentry(opts: { release?: string; environment?: string } = {}
       // url/sql data carry tickers in query strings; strip those but keep method/status/timing.
       scrubRequest(event.request);
       scrubSpanData((event.contexts?.trace as { data?: Record<string, unknown> } | undefined)?.data);
+      // A fetch outside any request is its own root span, named `GET https://…`.
+      if (typeof event.transaction === 'string') event.transaction = scrubUrl(event.transaction);
       for (const span of event.spans ?? []) {
-        if (typeof span.description === 'string') span.description = stripQuery(span.description);
+        if (typeof span.description === 'string') span.description = scrubUrl(span.description);
         scrubSpanData(span.data as Record<string, unknown> | undefined);
       }
       // Transactions carry the scope's breadcrumbs too (fetch URLs, console arguments).

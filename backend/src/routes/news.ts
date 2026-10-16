@@ -52,7 +52,8 @@ function newsPayload() {
   const asOf = newsNowIso();
   const seen = lastSeen();
   const topics = followedTopics();
-  const articles = listArticlesFor(topics).map(({ fetched_at, ...article }) => ({
+  // preview_at is enrichment bookkeeping, not part of the API.
+  const articles = listArticlesFor(topics).map(({ fetched_at, preview_at, ...article }) => ({
     ...article,
     is_new: fetched_at > seen,
   }));

@@ -13,6 +13,8 @@ function article(id: string, topics: NewsTopicRef[]): NewsArticle {
     url: `https://example.com/${id}`,
     published_at: '2026-10-15T08:00:00.000Z',
     source: 'yahoo',
+    image_url: null,
+    summary: null,
     topics,
     is_new: false,
   };

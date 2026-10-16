@@ -15,6 +15,18 @@ export interface NewsTopicRow extends TopicRef {
 
 export interface NewsArticleRow extends NewsItem {
   fetched_at: string;
+  summary: string | null;
+  /** When the preview was settled; null = still to try. Internal, never sent to the page. */
+  preview_at: string | null;
+}
+
+/** An article still waiting for its preview (image + intro). */
+export interface PendingPreview {
+  id: string;
+  title: string;
+  url: string;
+  source: NewsItem['source'];
+  image_url: string | null;
 }
 
 export interface NewsArticleWithTopics extends NewsArticleRow {
@@ -57,8 +69,8 @@ export function deleteNewsTopic(id: number): boolean {
  */
 export function saveArticles(topic: TopicRef, items: NewsItem[], fetchedAt: string): void {
   const insertArticle = db.prepare(`
-    INSERT OR IGNORE INTO news_articles (id, title, publisher, url, published_at, source, fetched_at)
-    VALUES (@id, @title, @publisher, @url, @published_at, @source, @fetched_at)
+    INSERT OR IGNORE INTO news_articles (id, title, publisher, url, published_at, source, image_url, fetched_at)
+    VALUES (@id, @title, @publisher, @url, @published_at, @source, @image_url, @fetched_at)
   `);
   const insertLink = db.prepare(
     `INSERT OR IGNORE INTO news_article_topics (article_id, kind, value) VALUES (?, ?, ?)`,
@@ -117,4 +129,53 @@ export function countFetchedAfter(topics: TopicRef[], since: string): number {
     `)
     .get(since, JSON.stringify(topics.map(topicKey))) as { n: number };
   return row.n;
+}
+
+/**
+ * Articles whose preview isn't settled yet, newest first. `topic` narrows it to one topic's
+ * articles (a fresh follow); `since` skips what retention is about to prune anyway.
+ */
+export function listPendingPreviews(opts: {
+  since: string;
+  limit: number;
+  topic?: TopicRef;
+}): PendingPreview[] {
+  const byTopic = opts.topic
+    ? `AND EXISTS (SELECT 1 FROM news_article_topics t
+                   WHERE t.article_id = a.id AND t.kind = @kind AND t.value = @value)`
+    : '';
+  return db
+    .prepare(`
+      SELECT a.id, a.title, a.url, a.source, a.image_url
+      FROM news_articles a
+      WHERE a.preview_at IS NULL AND a.published_at >= @since ${byTopic}
+      ORDER BY a.published_at DESC, a.id
+      LIMIT @limit
+    `)
+    .all({
+      since: opts.since,
+      limit: opts.limit,
+      ...(opts.topic ? { kind: opts.topic.kind, value: opts.topic.value } : {}),
+    }) as PendingPreview[];
+}
+
+/** A Google link decoded to the publisher's URL replaces the news.google.com redirect. */
+export function setArticleUrl(id: string, url: string): void {
+  db.prepare(`UPDATE news_articles SET url = ? WHERE id = ?`).run(url, id);
+}
+
+/**
+ * Settle an article's preview. `found` is what the page gave, or null when nothing usable
+ * came back. An image already stored (Yahoo's search thumbnail) wins over the page's.
+ */
+export function settlePreview(
+  id: string,
+  found: { image_url: string | null; summary: string | null } | null,
+  at: string,
+): void {
+  db.prepare(`
+    UPDATE news_articles
+    SET image_url = COALESCE(image_url, @image_url), summary = @summary, preview_at = @at
+    WHERE id = @id
+  `).run({ id, at, image_url: found?.image_url ?? null, summary: found?.summary ?? null });
 }

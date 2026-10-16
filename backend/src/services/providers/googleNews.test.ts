@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchKeywordNews, googleNewsUrl, parseGoogleNewsRss } from "./googleNews";
+import {
+  fetchKeywordNews,
+  googleNewsUrl,
+  parseDecodeResponse,
+  parseGoogleNewsRss,
+  resolveGoogleNewsUrl,
+} from "./googleNews";
 
 // Trimmed from a real response (2026-10-15). The <description> HTML and attributes are kept
 // on purpose: the parser must ignore them.
@@ -46,6 +52,7 @@ describe("parseGoogleNewsRss", () => {
       url: "https://news.google.com/rss/articles/AAA?oc=5",
       published_at: "2026-10-13T05:04:00.000Z",
       source: "google",
+      image_url: null,
     });
   });
 
@@ -122,5 +129,63 @@ describe("fetchKeywordNews", () => {
   it("throws on a non-2xx answer", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 503 })));
     await expect(fetchKeywordNews("ECB rente")).rejects.toThrow("Google News answered 503");
+  });
+});
+
+describe("resolveGoogleNewsUrl", () => {
+  const PAGE = `<html><body><c-wiz><div jscontroller="aLI87" data-n-a-id="AAA" data-n-a-ts="1760500000" data-n-a-sg="SIG_123"></div></c-wiz></body></html>`;
+  // batchexecute: an anti-JSON prefix, then an envelope whose payload is itself a JSON string.
+  const decoded = (payload: unknown) =>
+    `)]}'\n\n${JSON.stringify([["wrb.fr", "Fbv4je", JSON.stringify(payload), null, null, null, "generic"], ["di", 42]])}\n\n25\n[["e",4,null,null,123]]`;
+
+  function stubFetch(...responses: Response[]) {
+    const fetchMock = vi.fn();
+    for (const r of responses) fetchMock.mockResolvedValueOnce(r);
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("trades the page's signature for the publisher url", async () => {
+    const fetchMock = stubFetch(
+      new Response(PAGE),
+      new Response(decoded(["garturlres", "https://www.tijd.be/markten/kbc.html", 1])),
+    );
+
+    expect(await resolveGoogleNewsUrl("AAA")).toBe("https://www.tijd.be/markten/kbc.html");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://news.google.com/rss/articles/AAA");
+    // Google's decode keeps the browser user agent; only publisher page fetches use the link-preview one.
+    expect(fetchMock.mock.calls[0][1].headers["User-Agent"]).toMatch(/Mozilla/);
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(init.headers["User-Agent"]).toMatch(/Mozilla/);
+    expect(url).toBe("https://news.google.com/_/DotsSplashUi/data/batchexecute");
+    expect(init.method).toBe("POST");
+    const freq = JSON.parse(decodeURIComponent(String(init.body).replace(/^f\.req=/, "")));
+    expect(freq[0][0][0]).toBe("Fbv4je");
+    const inner = JSON.parse(freq[0][0][1]);
+    expect(inner[0]).toBe("garturlreq");
+    expect(inner.slice(2)).toEqual(["AAA", 1760500000, "SIG_123"]);
+  });
+
+  it("throws when the page has no signature", async () => {
+    stubFetch(new Response("<html><body>consent</body></html>"));
+    await expect(resolveGoogleNewsUrl("AAA")).rejects.toThrow(/signature/);
+  });
+
+  it("throws when the article page fails", async () => {
+    stubFetch(new Response("gone", { status: 404 }));
+    await expect(resolveGoogleNewsUrl("AAA")).rejects.toThrow(/404/);
+  });
+
+  it("throws on an unexpected decode answer", async () => {
+    stubFetch(new Response(PAGE), new Response(")]}'\n\nnot json"));
+    await expect(resolveGoogleNewsUrl("AAA")).rejects.toThrow(/unexpected/);
+  });
+});
+
+describe("parseDecodeResponse", () => {
+  it("rejects a payload that isn't garturlres", () => {
+    const text = `)]}'\n\n${JSON.stringify([["wrb.fr", "Fbv4je", JSON.stringify(["other", "x"])]])}`;
+    expect(() => parseDecodeResponse(text)).toThrow(/unexpected/);
   });
 });

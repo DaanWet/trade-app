@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fetchTickerNews, fetchKeywordNews } = vi.hoisted(() => ({
+const { fetchTickerNews, fetchKeywordNews, enrichPending } = vi.hoisted(() => ({
   fetchTickerNews: vi.fn(),
   fetchKeywordNews: vi.fn(),
+  enrichPending: vi.fn(),
 }));
 vi.mock("./providers/yahooNews", () => ({ fetchTickerNews }));
 vi.mock("./providers/googleNews", () => ({ fetchKeywordNews }));
+vi.mock("./newsPreviews", () => ({ enrichPending }));
 
 import { db } from "../db";
 import { logger } from "../helpers/logger";
@@ -30,7 +32,7 @@ const NOW = Date.parse("2026-10-15T12:00:00.000Z");
 let clock = NOW;
 
 function item(id: string, published_at = "2026-10-15T08:00:00.000Z"): NewsItem {
-  return { id, title: `Title ${id}`, publisher: "Pub", url: `https://example.com/${id}`, published_at, source: "yahoo" };
+  return { id, title: `Title ${id}`, publisher: "Pub", url: `https://example.com/${id}`, published_at, source: "yahoo", image_url: null };
 }
 
 function trade(ticker: string, side: "BUY" | "SELL", trade_date: string) {
@@ -44,6 +46,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   fetchTickerNews.mockReset().mockResolvedValue([]);
   fetchKeywordNews.mockReset().mockResolvedValue([]);
+  enrichPending.mockReset().mockResolvedValue(undefined);
   _resetNewsService();
   _resetProviderHealth();
   clock = NOW;
@@ -328,5 +331,73 @@ describe("refreshTopic", () => {
     expect(getStatus().failed_topics).toEqual([]);
     expect(fetchTickerNews).not.toHaveBeenCalled();
     expect(listArticlesFor([topic]).map((a) => a.id)).toEqual(["g1"]);
+  });
+});
+
+describe("previews", () => {
+  const RETENTION_CUTOFF = new Date(NOW - 30 * 24 * 60 * MIN).toISOString();
+
+  it("enriches after ingesting, within retention, before the round ends", async () => {
+    insertNewsTopic({ kind: "KEYWORD", value: "ECB rente" });
+    fetchKeywordNews.mockResolvedValue([item("g1")]);
+    let storedAtEnrich: string[] = [];
+    enrichPending.mockImplementation(async () => {
+      storedAtEnrich = listArticlesFor([{ kind: "KEYWORD", value: "ECB rente" }]).map((a) => a.id);
+    });
+
+    await refreshNews();
+
+    expect(enrichPending).toHaveBeenCalledWith({ since: RETENTION_CUTOFF, limit: 50, at: new Date(NOW).toISOString() });
+    expect(storedAtEnrich).toEqual(["g1"]);
+  });
+
+  it("stays refreshing until the previews are done", async () => {
+    let finish!: () => void;
+    enrichPending.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)));
+
+    const round = refreshNews();
+    await vi.waitFor(() => expect(enrichPending).toHaveBeenCalled());
+    expect(getStatus().refreshing).toBe(true);
+
+    finish();
+    await round;
+    expect(getStatus().refreshing).toBe(false);
+  });
+
+  it("a failing preview step doesn't fail the round", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    enrichPending.mockRejectedValue(new Error("boom"));
+
+    await expect(refreshNews()).resolves.toBeUndefined();
+
+    expect(getStatus().last_refresh_at).not.toBeNull();
+    expect(getStatus().failed_topics).toEqual([]);
+    expect(warn).toHaveBeenCalledWith("news", expect.stringContaining("previews failed"));
+  });
+
+  it("a new follow enriches only that topic's articles", async () => {
+    insertNewsTopic({ kind: "KEYWORD", value: "ECB rente" });
+    fetchKeywordNews.mockResolvedValue([item("g1")]);
+    const topic = followedTopics().find((t) => t.kind === "KEYWORD")!;
+
+    await refreshTopic(topic);
+
+    expect(enrichPending).toHaveBeenCalledWith({
+      since: RETENTION_CUTOFF,
+      limit: 20,
+      topic: { kind: "KEYWORD", value: "ECB rente" },
+      at: new Date(NOW).toISOString(),
+    });
+  });
+
+  it("a follow whose fetch failed skips previews", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => {});
+    insertNewsTopic({ kind: "KEYWORD", value: "ECB rente" });
+    fetchKeywordNews.mockRejectedValue(new Error("offline"));
+    const topic = followedTopics().find((t) => t.kind === "KEYWORD")!;
+
+    await refreshTopic(topic);
+
+    expect(enrichPending).not.toHaveBeenCalled();
   });
 });

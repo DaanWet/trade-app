@@ -1,0 +1,34 @@
+// Uitgebreide weergave: vaste thumbnail zodat titels uitgelijnd blijven, ook zonder afbeelding.
+.news-thumb {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--bs-border-radius);
+  background: var(--bs-secondary-bg);
+  color: var(--bs-secondary-color);
+  font-size: 1.5rem;
+  text-decoration: none;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+// min-width 0: een flex-kind krimpt anders niet onder de breedte van zijn langste woord.
+.news-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.news-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { search } = vi.hoisted(() => ({ search: vi.fn() }));
 vi.mock("../yahooClient", () => ({ yahoo: { search } }));
 
-import { cleanCompanyName, fetchTickerNews } from "./yahooNews";
+import { cleanCompanyName, fetchTickerNews, pickThumbnail } from "./yahooNews";
 
 function raw(uuid: string, relatedTickers: string[]) {
   return {
@@ -79,6 +79,7 @@ describe("fetchTickerNews", () => {
       url: "https://finance.yahoo.com/news/a",
       published_at: "2026-10-15T15:08:46.000Z",
       source: "yahoo",
+      image_url: null,
     });
   });
 
@@ -129,5 +130,50 @@ describe("fetchTickerNews", () => {
     search.mockRejectedValue(new Error("fetch failed"));
 
     await expect(fetchTickerNews("KBC.BR", "KBC Group NV")).rejects.toThrow("fetch failed");
+  });
+
+  it("carries the search thumbnail", async () => {
+    const withThumb = {
+      ...raw("a", ["ASML"]),
+      thumbnail: { resolutions: [{ url: "https://s.yimg.com/140.jpg", width: 140, height: 140, tag: "140x140" }] },
+    };
+    search.mockResolvedValue({ news: [withThumb] });
+
+    const [item] = await fetchTickerNews("ASML", null);
+
+    expect(item.image_url).toBe("https://s.yimg.com/140.jpg");
+  });
+});
+
+describe("pickThumbnail", () => {
+  const res = (url: string, width: number, tag: string) => ({ url, width, height: width, tag });
+
+  it("prefers the ready-made 140x140 crop", () => {
+    const thumb = { resolutions: [res("https://x/orig.jpg", 2560, "original"), res("https://x/140.jpg", 140, "140x140")] };
+    expect(pickThumbnail(thumb)).toBe("https://x/140.jpg");
+  });
+
+  it("falls back to the smallest resolution at least 100 px wide", () => {
+    const thumb = {
+      resolutions: [res("https://x/big.jpg", 1200, "original"), res("https://x/tiny.jpg", 50, "50x50"), res("https://x/mid.jpg", 300, "300x300")],
+    };
+    expect(pickThumbnail(thumb)).toBe("https://x/mid.jpg");
+  });
+
+  it("takes the first one when none is wide enough", () => {
+    const thumb = { resolutions: [res("https://x/tiny.jpg", 50, "50x50"), res("https://x/tinier.jpg", 40, "40x40")] };
+    expect(pickThumbnail(thumb)).toBe("https://x/tiny.jpg");
+  });
+
+  it("skips non-http(s) urls and returns null without a thumbnail", () => {
+    expect(pickThumbnail({ resolutions: [res("javascript:alert(1)", 140, "140x140")] })).toBeNull();
+    expect(pickThumbnail({ resolutions: [] })).toBeNull();
+    expect(pickThumbnail(undefined)).toBeNull();
+  });
+
+  it("skips thumbnails on a private or loopback host", () => {
+    const local = res("http://127.0.0.1/140.jpg", 140, "140x140");
+    expect(pickThumbnail({ resolutions: [local] })).toBeNull();
+    expect(pickThumbnail({ resolutions: [local, res("https://x/300.jpg", 300, "300x300")] })).toBe("https://x/300.jpg");
   });
 });

@@ -4,6 +4,7 @@ import { NewsBadgeService } from '../../services/news-badge.service';
 import { TickerSearchComponent } from '../../shared/ticker-search/ticker-search.component';
 import { chipCounts, filterArticles, topicKey } from '../../utils/news-filter';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
+import { persistedString } from '../../utils/storage';
 import type {
   NewsArticle,
   NewsResponse,
@@ -12,6 +13,9 @@ import type {
   NewsTopicOrigin,
   NewsTopicRef,
 } from '../../models';
+
+export type NewsView = 'compact' | 'extended';
+const NEWS_VIEWS: readonly NewsView[] = ['compact', 'extended'];
 
 const ORIGIN_ICONS: Record<NewsTopicOrigin, string> = {
   POSITION: 'bi-briefcase',
@@ -24,6 +28,7 @@ const ORIGIN_ICONS: Record<NewsTopicOrigin, string> = {
   standalone: true,
   imports: [TickerSearchComponent],
   templateUrl: './news.component.html',
+  styleUrl: './news.component.scss',
 })
 export class NewsComponent implements OnInit {
   private api = inject(ApiService);
@@ -46,6 +51,12 @@ export class NewsComponent implements OnInit {
   keyword = signal('');
   adding = signal(false);
   addError = signal<string | null>(null);
+
+  /** Compact = de gewone lijst; uitgebreid toont ook afbeelding en inleiding. Per browser onthouden. */
+  view = persistedString<NewsView>('news.view', 'extended', NEWS_VIEWS);
+  readonly extended = computed(() => this.view() === 'extended');
+  /** Artikels waarvan de afbeelding niet laadde: die tonen de placeholder. */
+  private brokenImages = signal<ReadonlySet<string>>(new Set());
 
   readonly articles = computed(() => filterArticles(this.data()?.articles ?? [], this.filter()));
   readonly counts = computed(() => chipCounts(this.data()?.articles ?? [], this.data()?.topics ?? []));
@@ -84,6 +95,14 @@ export class NewsComponent implements OnInit {
         this.error.set(err?.error?.error ?? 'Vernieuwen mislukt');
       },
     });
+  }
+
+  showImage(a: NewsArticle): boolean {
+    return a.image_url != null && !this.brokenImages().has(a.id);
+  }
+
+  imageFailed(id: string): void {
+    this.brokenImages.update(s => new Set(s).add(id));
   }
 
   isNew(a: NewsArticle): boolean {

@@ -88,4 +88,6 @@ export interface NewsItem {
   /** ISO 8601 UTC. */
   published_at: string;
   source: 'yahoo' | 'google';
+  /** Thumbnail (http(s)). Yahoo's search result carries one; Google's RSS never does. */
+  image_url: string | null;
 }

@@ -19,7 +19,17 @@ if (sentryBridge) {
       Sentry.browserTracingIntegration(),
       // Session Replay. Default privacy: all text → ***, media blocked, before it leaves
       // the machine (fits the "scrub" choice for a financial app).
-      Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
+      Sentry.replayIntegration({
+        maskAllText: true,
+        blockAllMedia: true,
+        // Hot-linked artikelafbeeldingen verschijnen als resource.img-spans met hun volledige URL,
+        // en die kan het artikel (en dus een gevolgd trefwoord) verraden: laat ze weg.
+        beforeAddRecordingEvent: (event) =>
+          event.data.tag === 'performanceSpan' &&
+          event.data.payload.op === 'resource.img'
+            ? null
+            : event,
+      }),
     ],
     tracesSampleRate: 1.0,
     tracePropagationTargets: [/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//],
