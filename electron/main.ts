@@ -114,9 +114,11 @@ function createWindow(port: number): void {
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('closed', () => { mainWindow = null; });
 
-  // Open external links in the user's browser instead of new Electron windows.
+  // Open external links in the user's browser instead of new Electron windows. Only http(s):
+  // article links come from third-party feeds, and openExternal would also launch file:,
+  // ms-msdt: or search-ms: URLs.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
 

@@ -236,3 +236,49 @@ export interface TaxLot extends RealizedLot {
   taxable_pnl_display: number; // fotomoment-adjusted taxable gain/loss
   basis_used: TaxBasis;
 }
+
+// --- Nieuws (issue #11) -----------------------------------------------------
+
+export type NewsTopicKind = 'TICKER' | 'KEYWORD';
+export type NewsTopicOrigin = 'POSITION' | 'WATCHLIST' | 'KEYWORD';
+
+export interface NewsTopicRef {
+  kind: NewsTopicKind;
+  value: string;
+}
+
+export interface NewsTopic extends NewsTopicRef {
+  /** null voor een open positie die niet ook op de watchlist staat (niet verwijderbaar). */
+  id: number | null;
+  origin: NewsTopicOrigin;
+}
+
+export interface NewsArticle {
+  id: string;
+  title: string;
+  publisher: string | null;
+  url: string;
+  published_at: string;
+  source: 'yahoo' | 'google';
+  topics: NewsTopicRef[];
+  is_new: boolean;
+}
+
+export interface NewsStatus {
+  last_refresh_at: string | null;
+  refreshing: boolean;
+  failed_topics: NewsTopicRef[];
+}
+
+export interface NewsResponse {
+  articles: NewsArticle[];
+  topics: NewsTopic[];
+  status: NewsStatus;
+  /** Servertijd van dit antwoord; terugsturen naar /news/seen. */
+  as_of: string;
+}
+
+export interface NewsUnread {
+  count: number;
+  refreshing: boolean;
+}

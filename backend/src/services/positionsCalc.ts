@@ -2,12 +2,9 @@ import { listTrades, distinctTickers, type TradeRow } from '../queries/trades';
 import { fetchQuotes } from './marketData';
 import { convert } from './fxService';
 import { getSetting } from '../helpers/settings';
-import { SETTING_KEYS } from '../helpers/constants';
+import { OPEN_SHARES_EPSILON, SETTING_KEYS } from '../helpers/constants';
 import { logger } from '../helpers/logger';
 import type { TickerRow } from '../queries/prices';
-
-/** A position counts as open above this many shares (ignores floating-point dust). */
-const OPEN_SHARES_EPSILON = 1e-9;
 
 /**
  * One open BUY lot waiting to be matched against a SELL.

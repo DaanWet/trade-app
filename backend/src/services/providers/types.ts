@@ -75,3 +75,17 @@ export interface PriceProvider {
   /** Symbol search by name or partial symbol (autocomplete). */
   search(query: string): Promise<SymbolSearchResult[]>;
 }
+
+// --- News -----------------------------------------------------------------
+
+/** One article from a news source. Sources only give a title + link, never the body. */
+export interface NewsItem {
+  /** Stable id from the source (Yahoo uuid, Google guid). */
+  id: string;
+  title: string;
+  publisher: string | null;
+  url: string;
+  /** ISO 8601 UTC. */
+  published_at: string;
+  source: 'yahoo' | 'google';
+}

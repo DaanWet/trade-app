@@ -6,7 +6,7 @@ import { logger } from './helpers/logger';
  * To add a new migration: bump SCHEMA_VERSION and add a new block at the bottom.
  */
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 export function runMigrations(db: Database): void {
   db.exec(`
@@ -111,6 +111,44 @@ export function runMigrations(db: Database): void {
       ALTER TABLE tickers ADD COLUMN previous_close REAL;
     `);
     db.prepare(`INSERT INTO schema_version (version) VALUES (?)`).run(4);
+  }
+
+  if (current < 5) {
+    db.exec(`
+      -- News tab (issue #11). Only what the user follows explicitly (watchlist tickers +
+      -- keywords); open positions are derived from trades and never stored here.
+      -- NOCASE: "ECB rente" and "ecb rente" are the same keyword.
+      CREATE TABLE news_topics (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind       TEXT NOT NULL CHECK (kind IN ('TICKER', 'KEYWORD')),
+        value      TEXT NOT NULL COLLATE NOCASE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (kind, value)
+      );
+
+      CREATE TABLE news_articles (
+        id           TEXT PRIMARY KEY,                     -- Yahoo uuid / Google guid
+        title        TEXT NOT NULL,
+        publisher    TEXT,
+        url          TEXT NOT NULL,
+        published_at TEXT NOT NULL,                        -- ISO 8601 UTC
+        source       TEXT NOT NULL CHECK (source IN ('yahoo', 'google')),
+        fetched_at   TEXT NOT NULL                         -- first sighting; never updated
+      );
+      CREATE INDEX idx_news_articles_published ON news_articles(published_at);
+
+      -- An article's badges. Composite PK, no surrogate id: nothing references a single
+      -- link, and the PK is what makes INSERT OR IGNORE idempotent across the symbol/name
+      -- queries and every refresh. kind+value rather than an FK to news_topics, because
+      -- position topics have no row there.
+      CREATE TABLE news_article_topics (
+        article_id TEXT NOT NULL REFERENCES news_articles(id) ON DELETE CASCADE,
+        kind       TEXT NOT NULL,
+        value      TEXT NOT NULL,
+        PRIMARY KEY (article_id, kind, value)
+      );
+    `);
+    db.prepare(`INSERT INTO schema_version (version) VALUES (?)`).run(5);
   }
 
   logger.info('schema', `At version ${SCHEMA_VERSION}`);

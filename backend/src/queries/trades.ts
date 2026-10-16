@@ -1,5 +1,5 @@
 import { db } from '../db';
-import type { TradeSide } from '../helpers/constants';
+import { OPEN_SHARES_EPSILON, type TradeSide } from '../helpers/constants';
 
 export interface TradeRow {
   id: number;
@@ -82,6 +82,23 @@ export function deleteTrade(id: number): boolean {
 export function distinctTickers(): string[] {
   return (db.prepare(`SELECT DISTINCT ticker FROM trades ORDER BY ticker`).all() as { ticker: string }[])
     .map(r => r.ticker);
+}
+
+/**
+ * Tickers with open shares right now, in one grouped query (DB-only, no quotes) — the news
+ * feed follows these and asks on every badge poll. Open shares = BUY − SELL: this equals the
+ * FIFO walk's open shares because short positions are hard-blocked at write time, so no SELL
+ * ever goes uncovered.
+ */
+export function openTickerSymbols(): string[] {
+  return (
+    db.prepare(`
+      SELECT ticker FROM trades
+      GROUP BY ticker
+      HAVING SUM(CASE side WHEN 'BUY' THEN shares ELSE -shares END) > ?
+      ORDER BY ticker
+    `).all(OPEN_SHARES_EPSILON) as { ticker: string }[]
+  ).map(r => r.ticker);
 }
 
 /**

@@ -16,6 +16,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.0.1",
+    "fast-xml-parser": "^5.11.2",
     "yahoo-finance2": "^3.15.2",
     "zod": "^3.23.8"
   },

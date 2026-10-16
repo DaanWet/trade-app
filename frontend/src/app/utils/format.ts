@@ -60,6 +60,26 @@ export function formatDateTime(iso: string | null | undefined): string {
   }).format(d);
 }
 
+const RELATIVE = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto' });
+
+/**
+ * Hoe lang geleden: "zonet", "5 minuten geleden", "2 uur geleden", "gisteren".
+ * Vanaf 24 uur telt het kalenderdagen; na 7 dagen wordt het een gewone datum.
+ */
+export function formatRelativeTime(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const diff = now.getTime() - d.getTime();
+  if (diff < 60_000) return 'zonet';
+  if (diff < 3_600_000) return RELATIVE.format(-Math.floor(diff / 60_000), 'minute');
+  if (diff < 86_400_000) return RELATIVE.format(-Math.floor(diff / 3_600_000), 'hour');
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
+  if (days > 7) return formatDate(iso);
+  return RELATIVE.format(-days, 'day');
+}
+
 /** Parse een door de gebruiker getypt decimaal getal; accepteert zowel ',' als
  *  '.' als decimaalteken. Geeft 0 terug bij leeg/ongeldig zodat het formulier
  *  numeriek blijft. */

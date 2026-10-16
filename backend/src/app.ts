@@ -11,6 +11,7 @@ import taxRouter from './routes/tax';
 import settingsRouter from './routes/settings';
 import cashRouter from './routes/cash';
 import diagnosticsRouter from './routes/diagnostics';
+import newsRouter from './routes/news';
 import { getActiveLimited } from './services/rateLimitMonitor';
 import { logger } from './helpers/logger';
 
@@ -60,6 +61,7 @@ app.use('/api/tax', taxRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/cash', cashRouter);
 app.use('/api/diagnostics', diagnosticsRouter);
+app.use('/api/news', newsRouter);
 
 if (STATIC_DIR) {
   app.use(express.static(STATIC_DIR));

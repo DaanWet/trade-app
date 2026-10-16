@@ -16,6 +16,10 @@ import type {
   CashTransaction,
   CashInput,
   Holdings,
+  NewsResponse,
+  NewsTopic,
+  NewsTopicRef,
+  NewsUnread,
 } from '../models';
 
 @Injectable({ providedIn: 'root' })
@@ -100,5 +104,25 @@ export class ApiService {
   }
   updateSettings(patch: Record<string, string>): Observable<Record<string, string>> {
     return this.http.put<Record<string, string>>(`${this.base}/settings`, patch);
+  }
+
+  // Nieuws
+  getNews(): Observable<NewsResponse> {
+    return this.http.get<NewsResponse>(`${this.base}/news`);
+  }
+  getNewsUnread(): Observable<NewsUnread> {
+    return this.http.get<NewsUnread>(`${this.base}/news/unread`);
+  }
+  markNewsSeen(seenAt: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/news/seen`, { seen_at: seenAt });
+  }
+  refreshNews(): Observable<NewsResponse> {
+    return this.http.post<NewsResponse>(`${this.base}/news/refresh`, {});
+  }
+  addNewsTopic(topic: NewsTopicRef): Observable<{ topic: NewsTopic }> {
+    return this.http.post<{ topic: NewsTopic }>(`${this.base}/news/topics`, topic);
+  }
+  deleteNewsTopic(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/news/topics/${id}`);
   }
 }

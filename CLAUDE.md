@@ -18,20 +18,22 @@
 ```
 backend/src/
   index.ts          — standalone dev server: imports app, app.listen(PORT=3100)
-  app.ts            — builds Express app: mounts 7 routers, CORS, static SPA (prod), error handler (→ central logger); exports `app` + `setRemoteSink` (so Electron can run it in-process + inject a Sentry sink)
+  app.ts            — builds Express app: mounts 8 routers, CORS, static SPA (prod), error handler (→ central logger); exports `app` + `setRemoteSink` (so Electron can run it in-process + inject a Sentry sink)
   db.ts             — SQLite singleton, WAL-mode, foreign keys ON
   schema.ts         — DB schema + migrations (idempotent, version-tracked)
-  routes/           — trades, positions, prices, tax, settings, cash, diagnostics
-  queries/          — trades.ts, prices.ts, cash.ts (better-sqlite3 statements)
+  routes/           — trades, positions, prices, tax, settings, cash, diagnostics, news
+  queries/          — trades.ts (incl. `openTickerSymbols()`: one grouped query for open positions), prices.ts, cash.ts, news.ts (better-sqlite3 statements)
   services/
     yahooClient.ts       — single shared yahoo-finance2 v3 instance (used by yahoo* providers)
     providers/
-      types.ts             — FxProvider + PriceProvider + DTO interfaces
+      types.ts             — FxProvider + PriceProvider + DTO interfaces + NewsItem (shared by both news providers)
       index.ts             — registry: which provider is active (defaults: Frankfurter, Yahoo)
       frankfurterFx.ts     — ECB-backed FX provider (no key, no rate limit)
       yahooFx.ts           — Yahoo FX provider (fallback)
       yahooPrice.ts        — Yahoo stock-price provider (default)
       chartQuote.ts        — live quote via the crumb-free /v8/chart endpoint (quote() fallback)
+      yahooNews.ts         — ticker news via yahoo.search (symbol + company name, kept only when relatedTickers has the symbol)
+      googleNews.ts        — keyword news via Google News RSS (nl-BE, last 7 days; fast-xml-parser)
     providerHealth.ts    — consecutive-failure tracker per provider+operation; escalates a streak to logger.error (→ Sentry) and feeds /api/diagnostics
     marketData.ts        — quote + historical with daily_prices cache + forward-fill (uses priceProvider)
     fxService.ts         — convert/getRate/warmHistoricalRates with fx_rates cache + forward-fill (uses fxProvider)
@@ -39,8 +41,9 @@ backend/src/
     portfolioHistory.ts  — Daily time-series of portfolio value (stocks, cash, net deposits) + per-ticker breakdown (`by_ticker`)
     cashService.ts       — derived cash balance (net deposits − net invested), display currency
     taxCalc.ts           — Belgian "meerwaardebelasting" report (per-year, parameterizable)
+    newsService.ts       — followed topics (open positions ∪ watchlist ∪ keywords), single-flight refresh rounds, staleness, status
   helpers/
-    constants.ts    — SETTING_KEYS, TRADE_SIDES, CASH_TX_TYPES, PRICE_CACHE_TTL_SECONDS
+    constants.ts    — SETTING_KEYS (incl. NEWS_LAST_SEEN), TRADE_SIDES, CASH_TX_TYPES, PRICE_CACHE_TTL_SECONDS, OPEN_SHARES_EPSILON, NEWS_TOPIC_KINDS + NEWS_REFRESH_INTERVAL_MS / NEWS_RETRY_AFTER_FAILURE_MS / NEWS_RETENTION_DAYS
     errors.ts       — errorMessage(), HttpError class
     settings.ts     — getSetting(), upsertSetting(), getAllSettings()
     logger.ts       — central logger: console + rotating file (${LOG_DIR}/app.log) + in-memory ring buffer + pluggable remote sink (setRemoteSink); getRecentEvents()/getLogFilePath()
@@ -51,11 +54,13 @@ frontend/src/app/
   app.routes.ts                 — lazy-loaded page routes
   models/index.ts               — TypeScript interfaces shared with API contracts
   services/api.service.ts       — all HTTP methods (one observable per endpoint)
-  utils/format.ts               — formatMoney, formatNumber, formatPercent, formatShares, formatDate, parseDecimalInput, pnlClass (nl-BE locale)
+  services/news-badge.service.ts — polls /news/unread every 2 min → navbar badge (also drives the backend's background refresh)
+  utils/format.ts               — formatMoney, formatNumber, formatPercent, formatShares, formatDate, formatRelativeTime (news timeline), parseDecimalInput, pnlClass (nl-BE locale)
   utils/allocation.ts           — computeAllocation(): per-ticker (+ optional cash) slices for the allocation pie; validated CVD-safe color order
   utils/returns.ts              — timeWeightedReturns(): the chart's % mode (inflows count from the start of a period, outflows at its end)
   utils/chart-lines.ts          — buildChartLines(): which lines the portfolio chart draws (all vs. a ticker selection, € vs. %); hasSelectionData()
   utils/ticker-groups.ts        — ticker-filter groups (status / type / quote currency), selection label, toggle, (de)serialize
+  utils/news-filter.ts          — chip filter + counts for the news timeline
   shared/
     decimal-input/                 — numeric input accepting ',' or '.' (used by trade-form)
     number-format/format.pipes.ts  — MoneyPipe, NumberPipe, PercentPipe, SharesPipe, DatePipe (standalone)
@@ -63,6 +68,7 @@ frontend/src/app/
     price-chart/portfolio-chart.component.ts — Chart.js line chart; draws what buildChartLines() returns (Totaal / Aandelen / Netto stortingen, or a ticker selection + Geïnvesteerd)
     price-chart/allocation-chart.component.ts — Chart.js doughnut (allocation per ticker; legend is an HTML table in the dashboard)
     ticker-filter/                 — dropdown: group shortcuts + per-ticker checkboxes for the portfolio chart
+    ticker-search/                 — ticker autocomplete input (news watchlist)
     trade-form/                    — create/edit form with ticker autocomplete (Yahoo search)
     cash-form/                     — create/edit form for cash deposits/withdrawals
   pages/
@@ -71,10 +77,12 @@ frontend/src/app/
     cash/         — cash balance summary + deposits/withdrawals list with inline form
     tax/          — yearly tax report cards
     settings/     — display currency selector
+    news/         — timeline with topic chips, NIEUW labels, follow/unfollow, refresh
 
 electron/
   main.ts           — Electron main: in prod require()s backend/dist/app.js, runs Express in-process on random 127.0.0.1 port, loads built Angular SPA; auto-update via electron-updater. Inits Sentry + sets LOG_DIR/APP_VERSION env before requiring backend; injects the Sentry sink into the backend logger after require.
-  sentry.ts         — @sentry/electron/main init + PII/financial scrubbing (beforeSend/beforeSendLog) + the sink the backend logger fans out to. DSN-gated (DEFAULT_DSN const / SENTRY_DSN env).
+  sentry.ts         — @sentry/electron/main init + PII/financial scrubbing (beforeSend/beforeSendTransaction/beforeSendLog) + the sink the backend logger fans out to. DSN-gated (DEFAULT_DSN const / SENTRY_DSN env).
+  scrub.ts          — pure scrub helpers (scrubText, stripQuery, scrubBreadcrumb, scrubRequest, scrubSpanData); no Sentry import, so a plain Node script can check them (electron/ has no test runner)
   preload.ts        — preload bridge
 package.json (root) — build/dist scripts + electron-builder config (asarUnpack better-sqlite3)
 ```
@@ -87,7 +95,10 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - **daily_prices** (cache): (symbol, price_date) PK, close. Forward-filled across non-trading days; past dates immutable.
 - **cash_transactions**: id, type ('DEPOSIT'/'WITHDRAWAL'), amount (>0), currency, tx_date, notes, created_at
 - **settings**: key-value (display_currency default 'EUR')
-- **schema_version**: tracks applied migrations (current: 4)
+- **news_topics**: id, kind ('TICKER'/'KEYWORD'), value (COLLATE NOCASE), created_at · UNIQUE(kind, value) — watchlist + keywords only
+- **news_articles**: id (Yahoo uuid / Google guid), title, publisher, url, published_at, source, fetched_at (first sighting)
+- **news_article_topics**: (article_id, kind, value) PK, ON DELETE CASCADE — an article's badges
+- **schema_version**: tracks applied migrations (current: 5)
 
 ## API endpoints
 
@@ -113,6 +124,12 @@ package.json (root) — build/dist scripts + electron-builder config (asarUnpack
 - `POST   /api/cash` — create deposit/withdrawal (zod-validated)
 - `PUT    /api/cash/:id`, `DELETE /api/cash/:id`
 - `GET    /api/diagnostics` → `{ appVersion, now, logFilePath, counters, settings, recentEvents }` — recent backend log events + scrubbed metadata (local-only, 127.0.0.1)
+- `GET    /api/news` → `{ articles, topics, status, as_of }` — timeline for followed topics (30 days); also starts a background round when stale; `status.failed_topics` only lists topics still followed
+- `GET    /api/news/unread` → `{ count, refreshing }` — navbar badge; starts a background round when stale
+- `POST   /api/news/seen  { seen_at }` — marks seen up to the echoed `as_of` (never moves backwards)
+- `POST   /api/news/refresh` — forced round (joins a running one), returns the timeline
+- `POST   /api/news/topics  { kind, value }` — follow a watchlist ticker / keyword (fetched at once); 409 on duplicate
+- `DELETE /api/news/topics/:id`
 
 ## Core domain logic
 
@@ -223,6 +240,43 @@ provider is in the quote currency** — never assume it matches the trade. Rules
 - `/api/tax/lots` returns each lot enriched with `taxable_pnl_display`, `fotomoment_value_display`, and `basis_used`.
 - Years before `appliesFrom` show `applies: false`, `tax_due: 0` (sold pre-2026 → informational economic P&L only).
 
+### News (newsService.ts + providers/yahooNews.ts, googleNews.ts)
+
+- **Followed topics** = open positions (derived via `openTickerSymbols()`, never stored) ∪ `news_topics`
+  (watchlist tickers + keywords). A held ticker that is also on the watchlist shows once as the
+  position; the watchlist row takes over after a sell-out.
+- **Two sources, no article bodies.** Tickers: `yahoo.search` by symbol **and** cleaned company
+  name, keeping only items whose `relatedTickers` contains the symbol (`KBC.BR` alone returns no
+  news; `CAS` returns unrelated companies). Keywords: Google News RSS, `hl=nl&gl=BE`, `when:7d`;
+  a 200 that isn't RSS (consent wall) counts as a failure; the request has a 15 s timeout
+  (`AbortSignal.timeout`), otherwise a stalled one blocks the sequential round (and
+  `POST /topics` / `/refresh`) for undici's 300 s default.
+- **Links are http(s) only.** Both providers drop items whose link doesn't match `^https?://`, and
+  Electron's `setWindowOpenHandler` only calls `shell.openExternal` for http(s) — article URLs come
+  from third-party feeds, and `file:` / `ms-msdt:` / `search-ms:` would otherwise reach the OS.
+- **No timer.** The navbar polls `GET /api/news/unread` every 2 min; that calls `maybeRefresh()`,
+  which starts a background round when the last one is >30 min old (5 min if every topic failed).
+  `GET /api/news` calls it too (a reload on /news can arrive before the first poll).
+  Rounds are sequential (Yahoo rate limits) and single-flight. Last-refresh time is in memory, so
+  every app start fetches.
+- **Rate limits and thrown rounds.** After a Yahoo 429 the rest of the round's *ticker* topics are
+  skipped (reported as failed; keywords still run), and `yahooNews` doesn't query the company name
+  once the symbol query was limited. A round that throws (prune / DB error) still sets
+  `lastRefreshAt` and counts as all-failed → retry after 5 min, not an error per 2-min poll.
+  `recordSuccess` runs only after the articles are saved.
+- **"New"** = `fetched_at > settings.news_last_seen`. The page echoes the server's `as_of` to
+  `POST /seen` (not "now"), and the marker never moves backwards. The page keeps a visit-scoped set
+  so labels survive ⟳.
+- **Retention 30 days**: stale items are skipped at ingest (else they would be re-inserted as "new"
+  every round), and older rows are pruned after each round (links cascade).
+- **Privacy**: a keyword's text never goes into a log line (`keyword #<id>`), because warnings
+  become Sentry breadcrumbs. It also stays out of the fetch breadcrumbs `@sentry/electron` records
+  on its own: the Sentry scrub (`scrubBreadcrumb` in `electron/scrub.ts`) deletes `http.query` /
+  `http.fragment`, cuts the query off `url`, and drops console breadcrumbs' raw `arguments`.
+- **Later: AI layer.** Articles and badges are in the db, so a summarizer can read them after a
+  round and write a digest without touching the fetch pipeline. The API-key question (per-user
+  vs. bundled) was deferred.
+
 ### Observability & diagnostics (logger.ts + Sentry)
 
 - **Central logger** (`helpers/logger.ts`) is the single choke point. Every `logger.{debug,info,warn,error}(component, msg)` fans out to: (1) the console (unchanged `[component] message` lines), (2) a size-rotated file at `${LOG_DIR}/app.log` (2 MB × 3 files; env `LOG_DIR`, dev fallback `backend/logs/`, prod `${userData}/logs/`), (3) an in-memory ring buffer (last 500 events, mirrors `rateLimitMonitor.ts`), (4) a pluggable remote sink. Logging is best-effort — file/sink errors are swallowed so it can never crash a request. `LOG_DIR` is resolved fresh per write.
@@ -230,7 +284,7 @@ provider is in the quote currency** — never assume it matches the trade. Rules
 - **`GET /api/diagnostics`** serves the ring buffer + app version + whitelisted settings (`SAFE_SETTING_KEYS`) + log-file path + counters (`convertFailures`, `rateLimited`, `providerFailures`). Local-only (127.0.0.1, single-user) → intentionally **not** scrubbed.
 - **Repeated provider failures escalate** (`services/providerHealth.ts`). A `logger.warn` only becomes a Sentry *breadcrumb*, and breadcrumbs only travel alongside a captured error — so a provider that failed silently for weeks produced **no remote signal at all** (the first report came from a user, not the app). `recordFailure(provider, operation, message)` counts consecutive failures and logs once at **error** level after `ESCALATE_AFTER` (3) in a row; `recordSuccess` clears the streak and re-arms it. Counters are per provider *and* operation, because during the crumb outage `quote()` was dead while `chart()` was fine. Frankfurter 404s are deliberately **not** counted: they mean "the ECB doesn't publish this pair" (TWD, KRW) and the composite provider's Yahoo fallback is the designed path.
 - **Remote = Sentry** (`@sentry/electron`, OpenTelemetry-based v10 SDK under the hood). The backend never imports Electron/Sentry: `electron/main.ts` calls `Sentry.init` (before the backend `require`, so require-time throws are caught) then injects a sink via the re-exported `setRemoteSink`. The sink maps warn/info/debug → breadcrumbs and `error` → `captureException`/`captureMessage`. Renderer errors are caught by a minimal `@sentry/electron/renderer` init in `frontend/src/main.ts` (inherits DSN/config from main over IPC).
-- **Privacy = cloud + scrub**: `sendDefaultPii:false` + `beforeSend`/`beforeSendLog` drop request bodies/query strings and redact paths/amounts/numbers/tickers (`scrubText` in `electron/sentry.ts`). The local file + `/api/diagnostics` stay unscrubbed by design.
+- **Privacy = cloud + scrub**: `sendDefaultPii:false` + `beforeSend`/`beforeSendLog` drop request bodies/query strings and redact paths/amounts/numbers/tickers (`scrubText` in `electron/scrub.ts`). Breadcrumb `data` is scrubbed too (`scrubBreadcrumb`: fetch `http.query`/`http.fragment` deleted, `url` query cut, console `arguments` dropped) on both errors and transactions; span data keeps its URL but loses its query. The local file + `/api/diagnostics` stay unscrubbed by design.
 - **DSN config**: Sentry is **DSN-gated** — set `SENTRY_DSN` (env, dev) or paste the public DSN into `DEFAULT_DSN` in `electron/sentry.ts` (for packaged builds; the DSN is a public ingest key, safe to ship). With no DSN, Sentry is skipped and only the local file + `/api/diagnostics` fallback runs (dev/tests stay clean). Future option (documented, not wired): swap the SDK transport for Sentry's direct OTLP endpoints (`…/integration/otlp/v1/{traces,logs}`).
 
 ## Locale & formatting
@@ -290,7 +344,7 @@ linux/win/mac builds to a GitHub Release.
 
 ## Known limitations / future work
 
-- News agent (Claude Agent SDK) for tickers in your watchlist — not yet implemented.
+- News has no AI summary or subject clustering yet (see "News → Later: AI layer").
 - No authentication — single-user local app. Don't expose to the internet without adding auth.
 
 ## Native module tip
